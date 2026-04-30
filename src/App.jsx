@@ -271,20 +271,6 @@ function App() {
   const [activeTab, setActiveTab] = useState('Project_Overview');
   const tabs = ['Project_Overview', 'IP_Index', 'Revision_Log', 'FA_Report'];
 
-  // localStorage 저장 로직 제거 (Supabase로 통합)
-  // useEffect(() => {
-  //   localStorage.setItem('mitus_projects_list', JSON.stringify(projectsList));
-  // }, [projectsList]);
-
-  // ─── [아키텍처 개선] 불필요한 연쇄 리렌더링 제거 ───
-  // 자동 저장 로직 (상세 데이터는 수동 저장/Submit 시점에 Supabase로 전송)
-  useEffect(() => {
-    if (projectData && activeProject) {
-      // 로컬 백업용으로만 남겨둘 수 있음
-      localStorage.setItem(`mitus_project_backup_${activeProject.id}`, JSON.stringify(projectData));
-    }
-  }, [projectData, activeProject]);
-
   const currentData = projectData?.revisions?.[currentViewedRevision] || {};
   const currentProjMeta = projectsList.find(p => p.id === activeProject?.id);
   const isSessionLockedByOther = currentProjMeta?.is_locked && currentProjMeta?.locked_by !== currentUser;
@@ -304,19 +290,21 @@ function App() {
 
   // ─── 브라우저 이탈 방지 (Cleanup Lock) ───
   useEffect(() => {
-    const handleBeforeUnload = async () => {
-      if (activeProject) {
-        // 비동기 처리가 보장되지 않을 수 있으므로, beacon이나 동기적 처리가 필요할 수 있음
-        // 여기서는 간단히 rpc나 별도 처리 없이 업데이트 시도
-        await supabase
-          .from('projects')
-          .update({ is_locked: false, locked_by: null, locked_at: null })
-          .eq('id', activeProject.id);
+    const handleBeforeUnload = () => {
+      if (activeProject && !isDemoMode) {
+        // 본인이 선점한 경우에만 해제 (Read-Only 진입 시 타인의 락을 지우지 않음)
+        const currentMeta = projectsList.find(p => p.id === activeProject.id);
+        if (currentMeta?.locked_by === currentUser) {
+          navigator.sendBeacon(
+            `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/projects?id=eq.${activeProject.id}`,
+            new Blob([JSON.stringify({ is_locked: false, locked_by: null, locked_at: null })], { type: 'application/json' })
+          );
+        }
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [activeProject, isDemoMode]);
+  }, [activeProject, isDemoMode, projectsList, currentUser]);
 
   // ─── [아키텍체 개선] 자식 컴포넌트 리렌더링 방지를 위한 useCallback 적용 ───
   const handleEditingStateChange = useCallback((isEditing) => {
@@ -331,7 +319,7 @@ function App() {
     }
   }, [currentViewedRevision]);
 
-  const handleTabSubmit = useCallback(async (tabName, newData) => {
+  const handleTabSubmit = useCallback(async (tabName, newData, forceDirty = false) => {
     if (isArchived) {
       alert("잠금 처리된 차수입니다. 수정할 수 없습니다.");
       return;
@@ -371,7 +359,7 @@ function App() {
       }
     }, 0);
 
-    if (isGloballyEditing) {
+    if (isGloballyEditing || forceDirty) {
       isDirtyRef.current = true;
     }
   }, [isArchived, isGloballyEditing, currentViewedRevision, activeProject, isDemoMode]);
@@ -415,7 +403,8 @@ function App() {
         id: projectId,
         name: proj.name,
         evt: phase,
-        isLatest: phase === proj.latest_evt
+        isLatest: phase === proj.latest_evt,
+        updated: proj.updated  // dbUpdatedAt으로 탭에 전달되는 핵심 필드
       });
       setCurrentViewedRevision(phase);
       setActiveTab('Project_Overview');
@@ -436,20 +425,29 @@ function App() {
       return;
     }
 
-    // 잠금 획득 시도 (이미 본인이 잠근 경우가 아니면 업데이트)
-    if (!(data.is_locked && data.locked_by === currentUser)) {
+    // 잠금 상태 판단 (3-way 분기)
+    const isLockedByMe = data.is_locked && data.locked_by === currentUser;
+    const isLockedByOther = data.is_locked && data.locked_by !== currentUser;
+
+    if (isLockedByOther) {
+      // 타인이 선점 중 → 락 획득 시도 없이 Read-Only로 진입
+      console.log(`🔒 [Presence] ${data.locked_by}님이 편집 중입니다. 읽기 전용으로 진입합니다.`);
+    } else if (!isLockedByMe) {
+      // 잠금 없음 → 즉시 선점
       await supabase
         .from('projects')
         .update({ is_locked: true, locked_by: currentUser, locked_at: new Date().toISOString() })
         .eq('id', projectId);
     }
+    // isLockedByMe → 이미 본인이 선점 중, 재획득 불필요
 
     setProjectData(data.project_data);
     setActiveProject({
       id: projectId,
       name: proj.name,
       evt: phase,
-      isLatest: phase === proj.latest_evt
+      isLatest: phase === proj.latest_evt,
+      updated: proj.updated  // dbUpdatedAt으로 탭에 전달되는 핵심 필드
     });
     setCurrentViewedRevision(phase);
     setActiveTab('Project_Overview');
@@ -591,10 +589,14 @@ function App() {
 
   const executeExit = async () => {
     if (activeProject && !isDemoMode) {
-      await supabase
-        .from('projects')
-        .update({ is_locked: false, locked_by: null, locked_at: null })
-        .eq('id', activeProject.id);
+      // 본인이 선점한 경우에만 해제 (Read-Only 진입자가 나갈 때 타인의 락을 지우지 않음)
+      const currentMeta = projectsList.find(p => p.id === activeProject.id);
+      if (currentMeta?.locked_by === currentUser) {
+        await supabase
+          .from('projects')
+          .update({ is_locked: false, locked_by: null, locked_at: null })
+          .eq('id', activeProject.id);
+      }
     }
     
     setShowExitWarning(false);
@@ -846,11 +848,6 @@ function App() {
     }
   };
   
-  const handleSaveBrowser = () => {
-    alert("기본적으로 로컬스토리지에 자동 저장되고 있습니다.");
-    isDirtyRef.current = false;
-    setProjectData({...projectData}); 
-  };
   
   const handleSaveMD = async () => {
     if (!activeProject || !currentData) {
@@ -962,15 +959,6 @@ function App() {
             <div className="flex gap-2.5">
               {activeProject.isLatest && (
                 <>
-                  <button type="button" onClick={handleSaveBrowser} className="hidden lg:flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 shadow-sm relative transition-colors">
-                    <SaveIcon size={16} /> 브라우저 임시저장
-                    {isDirtyRef.current && (
-                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                      </span>
-                    )}
-                  </button>
                   <button type="button" onClick={handleSaveMD} className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white bg-blue-600 border border-blue-700 hover:bg-blue-700 shadow-sm relative transition-colors">
                     <Download size={16} /> .md 백업
                   </button>
@@ -984,10 +972,10 @@ function App() {
                     </button>
                   );
               })() }
-              {/* [DEBUG ONLY] 롤백 버튼 */}
-              {activeProject.isLatest && activeProject.evt !== 'EVT0' && (
-                <button type="button" onClick={handleDebugRollback} className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 shadow-sm transition-colors">
-                  [DEBUG] 롤백
+              {/* [DEBUG ONLY] 롤백 버튼 — Read-Only 모드에서는 숨김 */}
+              {activeProject.isLatest && activeProject.evt !== 'EVT0' && !isSessionLockedByOther && (
+                <button type="button" onClick={handleDebugRollback} className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm text-red-500 bg-white border border-red-500 hover:bg-red-50 transition-colors shadow-sm">
+                  데이터 리셋 (테스트용)
                 </button>
               )}
             </div>
@@ -1009,17 +997,23 @@ function App() {
                   </span>
                   Draft Editing Mode<span className="text-slate-300 mx-1">|</span><span onClick={handleGlobalLock} className="text-blue-600 cursor-pointer hover:underline text-xs font-bold">문서 Lock 설정</span>
                 </div>
+              ) : isSessionLockedByOther ? (
+                // ─── 타인 편집 중: 독립된 강조 배지 (일반 Locked와 완전 분리) ───
+                <div className="flex items-center gap-2 text-rose-700 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-300 font-bold text-sm shadow-sm">
+                  <LockIcon size={14} className="text-rose-500 shrink-0" />
+                  🔒 타인이 편집 중 — 읽기 전용
+                  <span className="text-xs font-normal text-rose-500 ml-0.5 bg-rose-100 px-1.5 py-0.5 rounded">
+                    {currentProjMeta?.locked_by}
+                  </span>
+                </div>
               ) : (
+                // ─── 일반 Locked (보관됨, 차수 잠금 등) ───
                 <div className="flex items-center gap-2 text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
                   <span className="w-2.5 h-2.5 bg-slate-400 rounded-full"></span>
                   Read-Only (Locked)
                   {isProjectArchived ? (
                      <span className="text-xs font-bold text-slate-700 ml-2 bg-slate-200 px-2 py-0.5 rounded border border-slate-300">
                        This project is currently Archived. To make changes, please unarchive it from the Dashboard.
-                     </span>
-                  ) : isSessionLockedByOther ? (
-                     <span className="text-xs font-bold text-rose-600 ml-2 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                       현재 다른 사용자가 편집 중이므로 읽기 전용 모드로 표시됩니다.
                      </span>
                   ) : (
                      <><span className="text-slate-300 mx-1">|</span><span onClick={handleGlobalUnlock} className="text-red-500 cursor-pointer hover:underline text-xs flex items-center gap-1"><LockIcon size={12} /> Unlock</span></>
@@ -1052,8 +1046,10 @@ function App() {
                 data={currentData?.projectOverview} 
                 currentStage={currentViewedRevision}
                 isArchived={isArchived} 
+                projectId={activeProject.id}
+                dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('projectOverview', newData)} 
-                onImmediateUpdate={(newData) => handleTabSubmit('projectOverview', newData)}
+                onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('projectOverview', newData, forceDirty)}
                 revisionLogData={currentData?.revisionLog}
                 faReportData={currentData?.faReport}
                 onEditingStateChange={handleEditingStateChange}
@@ -1066,8 +1062,10 @@ function App() {
                 revisionLogData={currentData?.revisionLog}
                 currentRevision={currentViewedRevision}
                 isArchived={isArchived} 
+                projectId={activeProject.id}
+                dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('ipIndex', newData)} 
-                onImmediateUpdate={(newData) => handleTabSubmit('ipIndex', newData)}
+                onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('ipIndex', newData, forceDirty)}
                 onEditingStateChange={handleEditingStateChange}
               />
             )}
@@ -1077,9 +1075,11 @@ function App() {
                 overviewData={currentData?.projectOverview}
                 currentRevision={currentViewedRevision}
                 isArchived={isArchived} 
+                projectId={activeProject.id}
+                dbUpdatedAt={activeProject.updated}
                 faReportData={currentData?.faReport}
                 onSubmit={(newData) => handleTabSubmit('revisionLog', newData)} 
-                onImmediateUpdate={(newData) => handleTabSubmit('revisionLog', newData)}
+                onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('revisionLog', newData, forceDirty)}
                 onFaReportUpdate={(newData) => handleTabSubmit('faReport', newData)}
                 onEditingStateChange={handleEditingStateChange}
               />
@@ -1091,8 +1091,10 @@ function App() {
                 currentRevision={currentViewedRevision}
                 revisionLogData={currentData?.revisionLog}
                 isArchived={isArchived} 
+                projectId={activeProject.id}
+                dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('faReport', newData)} 
-                onImmediateUpdate={(newData) => handleTabSubmit('faReport', newData)}
+                onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('faReport', newData, forceDirty)}
                 onRevisionLogUpdate={(newLogData) => handleTabSubmit('revisionLog', newLogData)}
                 onEditingStateChange={handleEditingStateChange}
               />

@@ -4,6 +4,8 @@ import { X } from '../Icons';
 import ActionBar from '../ActionBar';
 import { LayoutDashboard, Lock, Copy } from 'lucide-react';
 import { DEFAULT_OVERVIEW_SCHEMA, MAJOR_SPECS_SCHEMA, ORGANIZATION_SCHEMA } from '../../data/schemaConfig';
+import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -72,7 +74,7 @@ const IpDeleteModal = ({ type, ipName, references, onConfirm, onCancel, customTi
   );
 };
 
-const ProjectOverviewTab = ({ data, currentStage, isArchived, onSubmit, onImmediateUpdate, revisionLogData, faReportData, onEditingStateChange }) => {
+const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, revisionLogData, faReportData, onEditingStateChange }) => {
   const safeData = data || {};
   const [unlockedOverview, setUnlockedOverview] = useState(false);
   const [isTemplateEditing, setIsTemplateEditing] = useState(false);
@@ -80,6 +82,19 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, onSubmit, onImmedi
   const [overviewSchema, setOverviewSchema] = useState(safeData.UI_Schemas?.Contents || DEFAULT_OVERVIEW_SCHEMA);
   const [specsSchema, setSpecsSchema] = useState(safeData.UI_Schemas?.Specs || MAJOR_SPECS_SCHEMA);
   const [orgSchema, setOrgSchema] = useState(safeData.UI_Schemas?.Organization || ORGANIZATION_SCHEMA);
+
+  // ─── 지능형 Auto-Save ───
+  const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
+    projectId,
+    tabName: 'Project_Overview',
+    data: safeData,
+    isEditing: unlockedOverview,
+    onRestore: (recoveredData) => {
+      if (onImmediateUpdate) onImmediateUpdate(recoveredData, true);
+    },
+    dbUpdatedAt,
+    setIsEditing: setUnlockedOverview
+  });
 
   useEffect(() => {
     if (safeData.UI_Schemas?.Contents) setOverviewSchema(safeData.UI_Schemas.Contents);
@@ -285,6 +300,7 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, onSubmit, onImmedi
 
   const handleSubmit = () => {
     if (onSubmit) onSubmit(safeData);
+    clearAutoSave(projectId, 'Project_Overview');
     setUnlockedOverview(false);
   };
 
@@ -354,6 +370,13 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, onSubmit, onImmedi
     <div className="max-w-full grid grid-cols-1 xl:grid-cols-12 gap-8 text-left h-full pb-10">
       
       {modal && <IpDeleteModal type={modal.type} ipName={modal.ipName} references={modal.references} onConfirm={modal.onConfirm} onCancel={closeModal} customTitle={modal.customTitle} customMessage={modal.customMessage} />}
+
+      <AutoSaveRecoveryModal 
+        isOpen={showRecoveryModal} 
+        timestamp={recoveredTime} 
+        onRestore={handleRestore} 
+        onDiscard={handleDiscard} 
+      />
 
       {/* ── 헤더 영역 ── */}
       <div className="xl:col-span-12 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 mb-6 gap-4">

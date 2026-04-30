@@ -5,6 +5,8 @@ import {
   Activity, Tag, ChevronDown, ChevronRight
 } from 'lucide-react';
 import ActionBar from '../ActionBar';
+import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ── FA 카드 좌측 Color Bar ────────────────────────────────────────
 const getFaColorBar = (fa) => {
@@ -60,6 +62,8 @@ export default function FaReportTab({
   onSubmit,
   onImmediateUpdate,
   onEditingStateChange,
+  projectId,
+  dbUpdatedAt
 }) {
   const faReports = useMemo(() => data?.faReports || [], [data]);
   const ipBlocks = useMemo(
@@ -91,6 +95,19 @@ export default function FaReportTab({
   useEffect(() => {
     if (onEditingStateChange) onEditingStateChange(isTabEditing);
   }, [isTabEditing, onEditingStateChange]);
+
+  // ─── 지능형 Auto-Save ───
+  const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
+    projectId,
+    tabName: 'FA_Report',
+    data: data,
+    isEditing: isTabEditing,
+    onRestore: (recoveredData) => {
+      if (onImmediateUpdate) onImmediateUpdate(recoveredData, true);
+    },
+    dbUpdatedAt,
+    setIsEditing: setIsTabEditing
+  });
 
   // ── versionGap 자동 계산 ─────────────────────────────────────────
   const calcGap = useCallback((srcVer, repStage) => {
@@ -182,6 +199,7 @@ export default function FaReportTab({
   // 잠금 핸들러
   const handleLock = () => {
     if (onSubmit) onSubmit(data);
+    clearAutoSave(projectId, 'FA_Report');
     setIsTabEditing(false);
     setEditingId(null);
     setFormData(makeDefault(selectedIp !== 'All' ? selectedIp : (ipBlocks[0] || ''), currentRevision));
@@ -189,6 +207,12 @@ export default function FaReportTab({
 
   return (
     <div className="space-y-4 max-w-full">
+      <AutoSaveRecoveryModal 
+        isOpen={showRecoveryModal} 
+        timestamp={recoveredTime} 
+        onRestore={handleRestore} 
+        onDiscard={handleDiscard} 
+      />
 
       {/* ── 헤더 (Title + ActionBar) ── */}
       <div className="flex justify-between items-center pb-4 border-b border-slate-200 mb-6">

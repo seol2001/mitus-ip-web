@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity, Plus, X, Eye, RefreshCw, Lock, Link, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity, Plus, X, Eye, RefreshCw, Lock, Link, AlertTriangle, ChevronDown, ChevronRight, Archive } from 'lucide-react';
 import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
 import ActionBar from '../ActionBar';
+import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 const lc = "block text-[13px] font-medium text-gray-600 mb-1.5";
 const ic = "px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
@@ -26,7 +28,7 @@ const CustomerAlignmentFields = ({ formData, handleInput, lc, ic, tc, disabled =
   </div>
 );
 
-export default function RevisionLogTab({ data, overviewData, currentRevision, isArchived, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange }) {
+export default function RevisionLogTab({ data, overviewData, currentRevision, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange }) {
   // Safe defaults
   const safeData = data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' };
   const issues = safeData.issues || [];
@@ -99,6 +101,19 @@ const makeDefaultForm = (ip) => ({
   }, [faReportData, currentSelectedIp]);
 
   const hasUnlinkedFa = unlinkedFasForCurrentIp.length > 0;
+
+  // ─── 지능형 Auto-Save ───
+  const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
+    projectId,
+    tabName: 'Revision_Log',
+    data: safeData,
+    isEditing: isTabEditing,
+    onRestore: (recoveredData) => {
+      if (onImmediateUpdate) onImmediateUpdate(recoveredData, true);
+    },
+    dbUpdatedAt,
+    setIsEditing: setIsTabEditing
+  });
 
   // Dropdown states for conditional rendering
   const [originSelVal, setOriginSelVal] = useState('');
@@ -498,6 +513,7 @@ const makeDefaultForm = (ip) => ({
 
   const handleLock = () => {
     if (onSubmit) onSubmit(safeData);
+    clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
     setEditingId(null);
     setFormData(makeDefaultForm(currentSelectedIp));
@@ -505,6 +521,12 @@ const makeDefaultForm = (ip) => ({
 
   return (
     <div className="space-y-4 max-w-full">
+      <AutoSaveRecoveryModal 
+        isOpen={showRecoveryModal} 
+        timestamp={recoveredTime} 
+        onRestore={handleRestore} 
+        onDiscard={handleDiscard} 
+      />
       <div className="flex justify-between items-center pb-4 border-b border-slate-200 mb-6">
         <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-3">
           <FileText size={28} className="text-blue-600" />
@@ -535,17 +557,7 @@ const makeDefaultForm = (ip) => ({
         </div>
       </div>
 
-      {isArchived && (
-        <div className="mb-4 bg-slate-100 border-2 border-slate-300 rounded-xl p-4 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="bg-slate-200 p-2 rounded-lg">
-            <Archive size={20} className="text-slate-600" />
-          </div>
-          <div>
-            <p className="text-sm font-extrabold text-slate-800">This project is currently Archived.</p>
-            <p className="text-xs text-slate-600 font-medium">To make changes, please unarchive it from the Dashboard.</p>
-          </div>
-        </div>
-      )}
+
 
       {stats.deferred > 0 && !isArchived && (
          <div className="mb-4 bg-blue-50 border-2 border-dashed border-blue-300 rounded-xl p-4 flex items-start gap-3">

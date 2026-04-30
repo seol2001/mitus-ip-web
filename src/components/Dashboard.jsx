@@ -5,6 +5,25 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [openSettingsId, setOpenSettingsId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+
+  // 날짜 포맷팅 (KST 기준, 분까지만 표시)
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return new Intl.DateTimeFormat('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Seoul'
+      }).format(date).replace(/\. /g, '-').replace(/\.$/, '');
+    } catch (e) {
+      return dateStr;
+    }
+  };
   
   // 영구 삭제 모달 상태
   const [deleteModalProj, setDeleteModalProj] = useState(null);
@@ -61,7 +80,7 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
         </div>
         <label 
           className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors"
-          title="로컬 데이터베이스(LocalStorage)에 이미 저장된 프로젝트 중 '보관(Archive)' 처리된 항목들을 표시합니다."
+          title="시스템 데이터베이스에 저장된 프로젝트 중 '보관(Archive)' 처리된 항목들을 표시합니다."
         >
           <input 
             type="checkbox" 
@@ -108,8 +127,8 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                 <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
                   {proj.name}
                 </h3>
-                <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-1">
-                  <Clock size={12} /> {proj.updated} 업데이트됨
+                <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-1 whitespace-nowrap overflow-hidden text-ellipsis" title={`${formatDate(proj.updated)} 업데이트됨`}>
+                  <Clock size={12} className="shrink-0" /> {formatDate(proj.updated)} 업데이트됨
                 </p>
               </div>
               
@@ -123,7 +142,7 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                 
                 {openSettingsId === proj.id && (
                   <div className="absolute top-8 right-0 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 overflow-hidden">
-                    {/* 보관 / 해제 — 레퍼런스 프로젝트는 표시 안 함 */}
+                    {/* ... (이전 코드 유지) */}
                     {!isReference && (
                       <button 
                         onClick={() => {
@@ -136,7 +155,6 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                       </button>
                     )}
 
-                    {/* 레퍼런스 복구 버튼 (SM5718 전용) */}
                     {isReference && handleResetReference && (
                       <button
                         onClick={() => {
@@ -149,7 +167,6 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                       </button>
                     )}
 
-                    {/* 삭제 버튼: 레퍼런스는 비활성화 */}
                     <button 
                       onClick={() => {
                         setOpenSettingsId(null);
@@ -171,14 +188,16 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                     </button>
                   </div>
                 )}
-
-                <span className="bg-indigo-50 text-indigo-700 font-bold px-3 py-1 rounded-full text-xs font-mono border border-indigo-100">
-                  Working: {proj.latest_evt}
-                </span>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-100">
+            <div className="mt-6 pt-4 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Current Stage</span>
+                <span className="bg-indigo-50 text-indigo-700 font-bold px-3 py-0.5 rounded-full text-[10px] font-mono border border-indigo-100 whitespace-nowrap">
+                  Working: {proj.latest_evt}
+                </span>
+              </div>
               <button
                 onClick={() => {
                   if (isLockedByOther && openDropdownId !== proj.id) {

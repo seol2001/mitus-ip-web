@@ -5,6 +5,8 @@ import ActionBar from '../ActionBar';
 import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
 import { BookOpen, Lock, Copy } from 'lucide-react';
 import { DEFAULT_IP_CONTENTS_SCHEMA } from '../../data/schemaConfig';
+import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -29,7 +31,7 @@ const SortableField = ({ id, isEditing, className, children }) => {
   );
 };
 
-const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, onSubmit, onImmediateUpdate, onEditingStateChange }) => {
+const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange }) => {
   const [unlockedOverview, setUnlockedOverview] = useState(false);
   const [selectedIpForIndex, setSelectedIpForIndex] = useState(null);
   const [isTemplateEditing, setIsTemplateEditing] = useState(false);
@@ -41,6 +43,19 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   }, [unlockedOverview, onEditingStateChange]);
 
   const safeData = data || {};
+
+  // ─── 지능형 Auto-Save ───
+  const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
+    projectId,
+    tabName: 'IP_Index',
+    data: safeData,
+    isEditing: unlockedOverview,
+    onRestore: (recoveredData) => {
+      if (onImmediateUpdate) onImmediateUpdate(recoveredData, true);
+    },
+    dbUpdatedAt,
+    setIsEditing: setUnlockedOverview
+  });
   const safeOverview = overviewData || { IP_Blocks: [], Project_Name: '', Foundry: '', Process: '' };
   
   useEffect(() => {
@@ -173,6 +188,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   };
   const handleSubmit = () => {
     if (onSubmit) onSubmit(safeData);
+    clearAutoSave(projectId, 'IP_Index');
     setUnlockedOverview(false);
   };
 
@@ -189,6 +205,13 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   return (
     <div className="max-w-full space-y-4 text-left h-full pb-10">
       
+      <AutoSaveRecoveryModal 
+        isOpen={showRecoveryModal} 
+        timestamp={recoveredTime} 
+        onRestore={handleRestore} 
+        onDiscard={handleDiscard} 
+      />
+
       {/* ── 헤더 (Title + 템플릿 편집 버튼 + ActionBar) ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 mb-6 w-full gap-4">
         <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2 shrink-0">
