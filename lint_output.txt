@@ -1,0 +1,74 @@
+
+> mitus-ip-web@0.0.0 lint
+> eslint .
+
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/extract_data.js
+  1:12  error  'require' is not defined    no-undef
+  2:14  error  'require' is not defined    no-undef
+  4:28  error  '__dirname' is not defined  no-undef
+  5:30  error  '__dirname' is not defined  no-undef
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/App.jsx
+  33:33  error  'setCurrentViewedRevision' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/components/tabs/FaReportTab.jsx
+  118:26  error  Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  116 |       updated = faReports.map(f => f.faId === editingId ? { ...f, ...formData } : f);
+  117 |     } else {
+> 118 |       const faId = `FA-${Date.now()}`;
+      |                          ^^^^^^^^^^ Cannot call impure function
+  119 |       updated = [...faReports, { ...formData, faId }];
+  120 |     }
+  121 |     const newData = { ...data, faReports: updated };  react-hooks/purity
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/components/tabs/IpIndexTab.jsx
+  19:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  17 |   useEffect(() => {
+  18 |     if (!selectedIpForIndex && safeOverview.IP_Blocks.length > 0) {
+> 19 |       setSelectedIpForIndex(safeOverview.IP_Blocks[0]);
+     |       ^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  20 |     } else if (selectedIpForIndex && !safeOverview.IP_Blocks.includes(selectedIpForIndex)) {
+  21 |       // 선택된 IP가 삭제되었을 때 리셋
+  22 |       setSelectedIpForIndex(safeOverview.IP_Blocks[0] || null);  react-hooks/set-state-in-effect
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/components/tabs/ProjectOverviewTab.jsx
+  116:9  warning  The 'safeData' logical expression could make the dependencies of useCallback Hook (at line 226) change on every render. To fix this, wrap the initialization of 'safeData' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/components/tabs/RevisionLogTab.jsx
+   29:9  warning  The 'safeData' logical expression could make the dependencies of useCallback Hook (at line 205) change on every render. To fix this, wrap the initialization of 'safeData' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          react-hooks/exhaustive-deps
+   30:9  warning  The 'issues' logical expression could make the dependencies of useMemo Hook (at line 46) change on every render. To fix this, wrap the initialization of 'issues' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   react-hooks/exhaustive-deps
+   30:9  warning  The 'issues' logical expression could make the dependencies of useMemo Hook (at line 118) change on every render. To fix this, wrap the initialization of 'issues' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/exhaustive-deps
+   30:9  warning  The 'issues' logical expression could make the dependencies of useMemo Hook (at line 164) change on every render. To fix this, wrap the initialization of 'issues' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/exhaustive-deps
+   30:9  warning  The 'issues' logical expression could make the dependencies of useMemo Hook (at line 193) change on every render. To fix this, wrap the initialization of 'issues' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  react-hooks/exhaustive-deps
+   31:9  warning  The 'historyBlocks' logical expression could make the dependencies of useMemo Hook (at line 46) change on every render. To fix this, wrap the initialization of 'historyBlocks' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     react-hooks/exhaustive-deps
+   31:9  warning  The 'historyBlocks' logical expression could make the dependencies of useMemo Hook (at line 118) change on every render. To fix this, wrap the initialization of 'historyBlocks' in its own useMemo() Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react-hooks/exhaustive-deps
+   95:7  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  93 |   useEffect(() => {
+  94 |     if (!editingId && mode === 'new') {
+> 95 |       setFormData(prev => ({ ...prev, ipBlock: currentSelectedIp }));
+     |       ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  96 |     }
+  97 |   }, [currentSelectedIp, editingId, mode]);
+  98 |  react-hooks/set-state-in-effect
+  155:6  warning  React Hook useMemo has a missing dependency: 'STAGES'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       react-hooks/exhaustive-deps
+
+✖ 17 problems (8 errors, 9 warnings)
+

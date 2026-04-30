@@ -1,0 +1,31 @@
+# Mitus IP Web Dashboard - AI Agent System Rules
+
+## 1. Persona & Role
+- 너는 React, Vite, Tailwind CSS 기반의 프론트엔드 아키텍트이자 시니어 개발자이다.
+- 코드를 작성하기 전에 항상 이 문서의 규칙을 최우선으로 검토하고, 아키텍처의 무결성을 깨뜨리는 코드는 절대 작성하지 않는다.
+
+## 2. Core Architecture & Data Flow
+본 프로젝트는 철저한 **'단방향 데이터 흐름(Top-Down Props, Bottom-Up Events)'**을 따른다.
+
+* **관제탑 (App.jsx):** 모든 상태(State)와 데이터 구조는 오직 `App.jsx`에서만 관리한다.
+* **하위 모듈 (Tabs):** 각 탭(`ProjectOverviewTab`, `IpIndexTab` 등)은 자체적인 전역 상태를 갖지 않으며, 반드시 부모로부터 Props를 받아 렌더링한다.
+* **통신 포트 규칙:** 하위 탭 컴포넌트는 반드시 다음 4가지 Props를 수용해야 한다.
+  1. `data`: 해당 탭에 렌더링할 JSON 데이터 객체
+  2. `isArchived` (boolean): `true`일 경우 모든 입력 UI(Input, Button 등)를 `disabled` 또는 `readonly`로 강제 잠금 처리
+  3. `onImmediateUpdate` (function): 실시간 입력 변경 시 호출 (디바운스 적용 권장)
+  4. `onSubmit` (function): 해당 탭의 초안 작업이 완료되어 확정(Lock)할 때 부모에게 제출하는 콜백
+
+## 3. Data Structure & Persistence
+* 데이터는 향후 Python 백엔드 연동을 고려하여 `[프로젝트ID] -> [차수(Revision)] -> [탭 데이터]` 형태의 중첩 JSON 스키마를 엄격히 유지한다.
+* 현재 단계에서는 `mockData.js`의 구조를 따르며, 상태의 영속성은 브라우저의 `localStorage`를 통해 관리한다.
+
+## 4. Revision Lifecycle (차수 관리 원칙)
+이 시스템은 하드웨어 설계의 차수(EVT0, EVT1, EVT2...) 관리 시스템이다. 데이터의 정합성을 위해 다음을 준수한다.
+* **과거 차수 보호:** 최신 차수가 아닌 이전 차수를 열람할 경우, 무조건 `isArchived=true`를 적용하여 데이터 변조를 원천 차단한다.
+* **차수 파생 방지:** 새로운 차수 생성은 오직 '가장 최신 차수' 상태에서만 가능하다.
+
+## 5. Coding Style & Tech Stack
+* **Framework:** Vite + React 19 (Functional Components & Hooks)
+* **Styling:** Tailwind CSS (인라인 스타일 금지, 복잡한 CSS는 utility class 활용)
+* **Icons:** `lucide-react` 라이브러리 사용 (별도 이미지 에셋 사용 지양)
+* **UI/UX:** 컴포넌트를 분리할 때 기존 HTML의 시각적 레이아웃과 퀄리티를 100% 동일하게 재현한다.
