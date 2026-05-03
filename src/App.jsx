@@ -656,6 +656,18 @@ function App() {
     setDirtyNavigation(null);
   };
 
+  // ─── [신규] 브라우저 뒤로가기 지원 ───
+  useEffect(() => {
+    const handlePopState = (event) => {
+      if (viewState === 'WORKSPACE') {
+        // 이미 히스토리가 이동된 상태이므로 history.back() 없이 내부 상태만 정리
+        executeExit(true);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [viewState]);
+
   const openWorkspace = async (projectId, phase) => {
     const proj = projectsList.find(p => p.id === projectId);
     if (!proj) return;
@@ -731,6 +743,10 @@ function App() {
     isDirtyRef.current = false;
     setIsGloballyEditing(false);
     originalDataSnapshot.current = null;
+    
+    // 브라우저 히스토리에 워크스페이스 진입 기록 추가
+    window.history.pushState({ type: 'WORKSPACE', projectId, phase }, '');
+    
     setViewState('WORKSPACE');
   };
 
@@ -925,7 +941,7 @@ function App() {
     }
   };
 
-  const executeExit = async () => {
+  const executeExit = async (fromPopState = false) => {
     if (activeProject && !isDemoMode) {
       // 본인이 선점한 경우에만 해제 (Read-Only 진입자가 나갈 때 타인의 락을 지우지 않음)
       const currentMeta = projectsList.find(p => p.id === activeProject.id);
@@ -937,6 +953,11 @@ function App() {
       }
     }
     
+    // UI 버튼을 통해 나가는 경우 브라우저 히스토리도 뒤로 한 칸 이동
+    if (!fromPopState) {
+      window.history.back();
+    }
+
     setShowExitWarning(false);
     setViewState('DASHBOARD');
     setActiveProject(null);
