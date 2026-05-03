@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { FileUp, Plus, Clock, Settings, Archive, ArchiveRestore, Trash2, AlertTriangle, X, Unlock as UnlockIcon, History, ChevronDown, Search, Layout } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { FileUp, Plus, Clock, Settings, Archive, ArchiveRestore, Trash2, AlertTriangle, X, Unlock as UnlockIcon, History, ChevronDown, Search, Layout, Download, Edit3, Copy } from 'lucide-react';
 import { useConfirm } from '../contexts/ConfirmContext';
 
-export default function Dashboard({ projects, currentUser, isDemoMode, isDbConnected, referenceProjectId, handleNewProject, handleLoadProjectClick, openWorkspace, handleToggleArchive, handlePermanentDelete, handleResetReference, handleForceUnlock, globalIpDictionary, customIpDetails, handleEditCustomIp, handleDeleteCustomIp, handleAddCustomIp }) {
+export default function Dashboard({ projects, currentUser, isDemoMode, isDbConnected, referenceProjectId, handleNewProject, handleLoadProjectClick, openWorkspace, handleToggleArchive, handlePermanentDelete, handleResetReference, handleForceUnlock, globalIpDictionary, customIpDictionary, customIpDetails, handleEditCustomIp, handleDeleteCustomIp, handleAddCustomIp, handleExportProject, onManageProject }) {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [openSettingsId, setOpenSettingsId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const showConfirm = useConfirm();
+  const fileInputRef = useRef(null);
 
   const [isIpDictOpen, setIsIpDictOpen] = useState(false);
   const [isSubBlockOpen, setIsSubBlockOpen] = useState(false);
@@ -184,8 +185,19 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
           </p>
         </div>
         <div className="flex gap-3 w-full md:w-auto">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (file) handleLoadProjectClick(file);
+              e.target.value = ''; // Reset for same file selection
+            }} 
+            accept=".json,.mitus"
+            className="hidden" 
+          />
           <button
-            onClick={handleLoadProjectClick}
+            onClick={() => fileInputRef.current?.click()}
             title="외부 백업 파일(.json)을 시스템으로 가져옵니다."
             className="flex-1 whitespace-nowrap min-w-max flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-bold text-sm border border-slate-200 shadow-sm transition-all"
           >
@@ -284,7 +296,38 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                 
                 {openSettingsId === proj.id && (
                   <div className="absolute top-8 right-0 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 overflow-hidden">
-                    {/* ... (이전 코드 유지) */}
+                    <button 
+                      onClick={() => {
+                        setOpenSettingsId(null);
+                        handleExportProject(proj.id);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+                    >
+                      <Download size={14} className="text-blue-500" /> Export Data (.json)
+                    </button>
+
+                    <div className="h-[1px] bg-slate-100 mx-2 my-1" />
+
+                    <button 
+                      onClick={() => {
+                        setOpenSettingsId(null);
+                        onManageProject('rename', proj);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+                    >
+                      <Edit3 size={14} className="text-amber-500" /> Rename Identity
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        setOpenSettingsId(null);
+                        onManageProject('copy', proj);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+                    >
+                      <Copy size={14} className="text-indigo-500" /> Duplicate Project (Clone)
+                    </button>
+
                     {!isReference && (
                       <button 
                         onClick={() => {

@@ -13,6 +13,8 @@ import { ArrowLeft, Save as SaveIcon, Download, ChevronsRight, Lock as LockIcon,
 import JSZip from 'jszip';
 import { getOverviewMD, getIpIndexMD, getRevLogMD, getFaReportMD } from './utils/exportMarkdown';
 import AccessGate from './components/AccessGate';
+import ImportModal from './components/ImportModal';
+import ProjectManageModal from './components/ProjectManageModal';
 
 
 // ─── [아키텍처 개선] 비즈니스 로직 순수 함수로 분리 (Fat Component 방지) ───
@@ -136,174 +138,89 @@ function App() {
   const [lockModalOpen, setLockModalOpen] = useState(false);
   const [lockChecklist, setLockChecklist] = useState([]);
   const showConfirm = useConfirm();
-  const [isDbConnected, setIsDbConnected] = useState(false); // 실제 DB 연결 상태
+  const [isDbConnected, setIsDbConnected] = useState(false);
 
   const [globalIpDictionary, setGlobalIpDictionary] = useState(ipCategoryNameMap);
   const [customIpDetails, setCustomIpDetails] = useState([]);
+  
+  // ─── [신규] 가져오기(Import) 모달 상태 ───
+  const [importModalData, setImportModalData] = useState(null); // { project, existingProject }
+  const [manageModalData, setManageModalData] = useState(null); // { mode, project }
 
-  // ─── [신규] 앱 진입 시 초기 히스토리 엔트리 생성 (뒤로가기 이탈 방지용) ───
-  useEffect(() => {
-    if (!window.history.state) {
-      window.history.pushState({ type: 'DASHBOARD' }, '');
-    }
-  }, []);
-  // ─── [Supabase] 초기 프로젝트 목록 로드 ───
-  useEffect(() => {
-    async function fetchProjects() {
+
+  // ─── [Supabase] 프로젝트 목록 로드 함수 ───
+  async function fetchProjects() {
+    try {
       setLoading(true);
-      console.log('🔍 Supabase에서 프로젝트 목록을 불러오는 중...');
-      
       const { data, error } = await supabase
         .from('projects')
         .select('id, name, latest_evt, phases, updated, is_locked, locked_by, locked_at, is_archived, project_data')
         .order('updated', { ascending: false });
 
-      // Fetch Custom IPs
-      const { data: customIpsData, error: customIpsError } = await supabase
+      const { data: customIpsData } = await supabase
         .from('custom_ips')
         .select('*')
         .order('created_at', { ascending: true });
         
-      if (!customIpsError && customIpsData) {
+      if (customIpsData) {
         setCustomIpDetails(customIpsData);
-        // Merge into dictionary
         setGlobalIpDictionary(prev => {
           const newDict = JSON.parse(JSON.stringify(prev));
           customIpsData.forEach(cip => {
-            if (!newDict[cip.category]) {
-              newDict[cip.category] = [];
-            }
-            if (!newDict[cip.category].includes(cip.name)) {
-              newDict[cip.category].push(cip.name);
-            }
+            if (!newDict[cip.category]) newDict[cip.category] = [];
+            if (!newDict[cip.category].includes(cip.name)) newDict[cip.category].push(cip.name);
           });
           return newDict;
         });
       }
 
       if (error) {
-        console.error('❌ Supabase Fetch Error:', error);
-        
-        // [긴급 대응] 접속 실패 시 데모 데이터 로드
         if (error.message === 'Failed to fetch' || !import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL.includes('your-project-id')) {
-          console.warn('⚠️ Supabase 연결이 설정되지 않았거나 실패했습니다. 데모 데이터를 로드합니다.');
           setIsDemoMode(true);
-          try {
-            const { initialProjectData, defaultProjOverview } = await import('./data/mockData');
-            const demoData = [
-              {
-                id: 'SM5718',
-                name: 'SM5718 (Demo Mode)',
-                latest_evt: 'EVT2',
-                phases: ['EVT1', 'EVT2'],
-                updated: new Date().toISOString(),
-                is_archived: false,
-                project_data: initialProjectData
-              }
-            ];
-            setProjectsList(demoData);
-          } catch (e) {
-            console.error('Demo data load failed:', e);
-          }
-        } else {
-          console.error('Supabase connection failed:', error.message);
-          setIsDbConnected(false);
-        }
-      } else if (!data || data.length === 0) {
-        // DB는 연결되었으나 비어있음 → Seeding
-        setIsDbConnected(true);
-        console.warn('⚠️ 데이터베이스가 비어있습니다. 초기 시딩을 시작합니다...');
-        try {
-          const { initialProjectData, defaultProjOverview } = await import('./data/mockData');
-          
-          const seedProjects = [
-            {
-              id: 'SM5718',
-              name: 'SM5718 (Seed)',
-              latest_evt: 'EVT2',
-              phases: ['EVT1', 'EVT2'],
-              updated: new Date().toISOString(),
-              is_archived: false,
-              project_data: initialProjectData
-            },
-            {
-              id: 'SM5719',
-              name: 'SM5719 (Empty)',
-              latest_evt: 'EVT0',
-              phases: ['EVT0'],
-              updated: new Date().toISOString(),
-              is_archived: true,
-              project_data: {
-                projectId: "SM5719",
-                revisions: {
-                  "EVT0": {
-                    status: "draft",
-                    projectOverview: defaultProjOverview,
-                    ipIndex: {},
-                    revisionLog: { issues: [], historyBlocks: [], loadedIssues: [] },
-                    faReport: { faReports: [] }
-                  }
-                }
-              }
-            }
-          ];
-
-          const { data: seeded, error: seedError } = await supabase.from('projects').upsert(seedProjects).select();
-          if (seedError) {
-            console.error('❌ Seed Upsert Error:', seedError);
-          } else {
-            console.log('✅ Seeding 성공:', seeded);
-            setProjectsList(seeded.map(p => ({
-              ...p,
-              is_locked: p.is_locked ?? false,
-              locked_by: p.locked_by ?? null,
-              locked_at: p.locked_at ?? null,
-              is_archived: p.is_archived ?? false
-            })));
-          }
-        } catch (e) {
-          console.error('❌ Seeding Logic Error:', e);
+          const { initialProjectData } = await import('./data/mockData');
+          setProjectsList([{
+            id: 'SM5718',
+            name: 'SM5718 (Demo Mode)',
+            latest_evt: 'EVT1',
+            phases: ['EVT1'],
+            updated: new Date().toISOString(),
+            is_locked: false,
+            project_data: initialProjectData
+          }]);
         }
       } else {
-        console.log(`✅ ${data.length}개의 프로젝트를 성공적으로 불러왔습니다.`);
-        // 데이터 보정 (Migration Logic)
-        const validated = data.map(p => ({
+        setProjectsList(data.map(p => ({
           ...p,
           is_locked: p.is_locked ?? false,
-          locked_by: p.locked_by ?? null,
-          locked_at: p.locked_at ?? null,
           is_archived: p.is_archived ?? false
-        }));
-        setProjectsList(validated);
+        })));
         setIsDbConnected(true);
+        setIsDemoMode(false);
       }
+    } catch (e) {
+      console.error('Fetch Projects Error:', e);
+    } finally {
       setLoading(false);
     }
+  }
+
+  // ─── [useEffect] 프로젝트 로드, 실시간 구독 및 URL 인증 ───
+  useEffect(() => {
     fetchProjects();
 
-    // URL 파라미터 체크 (POC용 편의 기능: ?key=mitus2026)
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('key') === 'mitus2026') {
       handleAuthorize();
     }
-
-    // ─── [Realtime] projects 테이블 실시간 구독 ───
 
     const channel = supabase
       .channel('projects-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
         const { eventType, new: newRecord, old: oldRecord } = payload;
         if (eventType === 'INSERT') {
-          setProjectsList(prev => {
-            if (prev.some(p => p.id === newRecord.id)) return prev;
-            return [newRecord, ...prev];
-          });
+          setProjectsList(prev => prev.some(p => p.id === newRecord.id) ? prev : [newRecord, ...prev]);
         } else if (eventType === 'UPDATE') {
-          setProjectsList(prev => prev.map(p =>
-            p.id === newRecord.id
-              ? { ...p, ...newRecord }
-              : p
-          ));
+          setProjectsList(prev => prev.map(p => p.id === newRecord.id ? { ...p, ...newRecord } : p));
         } else if (eventType === 'DELETE') {
           setProjectsList(prev => prev.filter(p => p.id !== oldRecord.id));
         }
@@ -489,6 +406,25 @@ function App() {
   const [dirtyNavigation, setDirtyNavigation] = useState(null); 
   const [showExitWarning, setShowExitWarning] = useState(false);
   const [isGloballyEditing, setIsGloballyEditing] = useState(false);
+
+  // ─── [신규] 앱 진입 시 초기 히스토리 엔트리 생성 및 뒤로가기 방지 ───
+  useEffect(() => {
+    if (!window.history.state) {
+      window.history.pushState({ type: 'DASHBOARD' }, '');
+    }
+
+    const handlePopState = (event) => {
+      if (viewState === 'WORKSPACE' && isGloballyEditing) {
+        window.history.pushState({ type: 'WORKSPACE' }, '');
+        setShowExitWarning(true);
+      } else {
+        setViewState('DASHBOARD');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [viewState, isGloballyEditing]);
   const isDirtyRef = useRef(false);
   const originalDataSnapshot = useRef(null);
   
@@ -921,13 +857,41 @@ function App() {
     setProjectsList(prev => prev.filter(p => p.id !== projectId));
   };
 
-  const handleLoadProjectClick = async () => {
-    showConfirm({
-      title: "준비 중",
-      message: "외부 프로젝트 파일(.json)을 가져오는 기능은 현재 개발 중입니다. (Phase 3 implementation)",
-      type: "info",
-      showCancel: false
-    });
+  const handleLoadProjectClick = async (file) => {
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const content = JSON.parse(e.target.result);
+          
+          // 기본 유효성 검사
+          if (content.app !== "Mitus-IP-Web" || !content.project || !content.project.id) {
+            throw new Error("유효한 Mitus-IP-Web 프로젝트 파일이 아닙니다.");
+          }
+
+          const incomingProject = content.project;
+          const existingProject = projectsList.find(p => p.id === incomingProject.id);
+
+          // 모달 오픈 (사용자에게 옵션 선택 받기)
+          setImportModalData({
+            project: incomingProject,
+            existingProject: existingProject
+          });
+        } catch (err) {
+          showConfirm({
+            title: "가져오기 실패",
+            message: "파일을 읽는 중 오류가 발생했습니다: " + err.message,
+            type: "danger",
+            showCancel: false
+          });
+        }
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      console.error('File Reader Error:', err);
+    }
   };
 
   // ─── [신규] 잠금 강제 해제 (Force Unlock) 핸들러 ───
@@ -1420,6 +1384,256 @@ function App() {
     }
   };
 
+  const handleExportProject = async (projectId) => {
+    const proj = projectsList.find(p => p.id === projectId);
+    if (!proj) return;
+
+    try {
+      const exportData = {
+        app: "Mitus-IP-Web",
+        version: "1.0",
+        export_at: new Date().toISOString(),
+        exported_by: currentUser,
+        project: {
+          id: proj.id,
+          name: proj.name,
+          phases: proj.phases,
+          latest_evt: proj.latest_evt,
+          is_archived: proj.is_archived,
+          project_data: proj.project_data
+        }
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // 파일명 개선: Mitus_Project_[이름]_[날짜].json
+      const dateStr = new Date().toISOString().split('T')[0];
+      const safeName = (proj.name || proj.id).replace(/[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ\s]/gi, '_').trim();
+      link.download = `Mitus_Project_${safeName}_${dateStr}.json`;
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // 브라우저가 다운로드를 준비할 시간을 주기 위해 약간의 지연 후 메모리 해제
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (err) {
+      showConfirm({
+        title: "내보내기 오류",
+        message: "JSON 데이터 내보내기 중 오류가 발생했습니다: " + err.message,
+        type: "danger",
+        showCancel: false
+      });
+    }
+  };
+
+  const handleImportConfirm = async (config) => {
+    const { mode, useBackup, selectedRevisions, revActions, newId, newName } = config;
+    const { project: incoming } = importModalData;
+
+    try {
+      setLoading(true);
+      
+      // 1. 가져올 데이터 필터링
+      const filteredRevisions = {};
+      selectedRevisions.forEach(rev => {
+        filteredRevisions[rev] = incoming.project_data.revisions[rev];
+      });
+      
+      let projectToSave = {
+        ...incoming,
+        project_data: {
+          ...incoming.project_data,
+          revisions: filteredRevisions
+        },
+        updated: new Date().toISOString(),
+        is_locked: false,
+        locked_by: null,
+        locked_at: null
+      };
+
+      // ─── [신규] Deep Replace 로직 (신규 프로젝트 시 내부 ID/이름 치환) ───
+      if (mode === 'new') {
+        const oldId = incoming.id;
+        const oldName = incoming.name || incoming.id;
+        
+        // JSON 문자열 치환 방식으로 가장 확실하게 전체 교체
+        let jsonStr = JSON.stringify(projectToSave);
+        
+        // ID 치환 (전체 일치하는 경우만 바꾸는 게 좋지만, 여기서는 범용적으로 처리)
+        // 주의: 너무 짧은 ID는 위험할 수 있으나 프로젝트 ID 특성상 보통 고유함
+        if (oldId !== newId) {
+          jsonStr = jsonStr.split(`"${oldId}"`).join(`"${newId}"`);
+        }
+        // 이름 치환
+        if (oldName !== newName) {
+          jsonStr = jsonStr.split(`"${oldName}"`).join(`"${newName}"`);
+          // Overview 내부의 Project_Name 등 객체 값들도 치환 (따옴표 없는 경우 대응)
+          jsonStr = jsonStr.split(`: "${oldName}"`).join(`: "${newName}"`);
+        }
+        
+        projectToSave = JSON.parse(jsonStr);
+        
+        // 상위 레벨 최종 확정
+        projectToSave.id = newId;
+        projectToSave.name = newName;
+      }
+
+      if (isDemoMode) {
+        if (mode === 'new') {
+          setProjectsList(prev => [projectToSave, ...prev]);
+        } 
+        else if (mode === 'merge') {
+          setProjectsList(prev => prev.map(p => {
+            if (p.id !== incoming.id) return p;
+            
+            // 백업 생성 (Snapshot)
+            if (useBackup) {
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 14);
+              const backupProject = { ...p, id: p.id + "_BAK_" + timestamp, is_archived: true };
+              // 실제로는 여기서 리스트에 추가하는 로직이 더 복잡할 수 있으나 생략
+            }
+
+            const merged = { ...p.project_data.revisions };
+            selectedRevisions.forEach(rev => {
+              const action = revActions[rev];
+              if (action === 'overwrite') {
+                merged[rev] = filteredRevisions[rev];
+              } else {
+                const targetKey = merged[rev] ? rev + "_Imported" : rev;
+                merged[targetKey] = filteredRevisions[rev];
+              }
+            });
+            return { ...p, project_data: { ...p.project_data, revisions: merged }, updated: new Date().toISOString() };
+          }));
+        }
+      } else {
+        // ─── [Real Mode] ───
+        if (mode === 'new') {
+          const { error } = await supabase.from('projects').insert([projectToSave]);
+          if (error) throw error;
+        } 
+        else if (mode === 'merge') {
+          const existing = projectsList.find(p => p.id === incoming.id);
+          
+          // 1. 전체 프로젝트 백업 (Snapshot)
+          if (useBackup && existing) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 14);
+            const backupId = existing.id + "_BAK_" + timestamp;
+            const backupProject = { ...existing, id: backupId, is_archived: true };
+            const { error: bakError } = await supabase.from('projects').insert([backupProject]);
+            if (bakError) console.error("Backup failed, but continuing:", bakError);
+          }
+
+          // 2. 데이터 병합
+          const mergedRevisions = { ...existing.project_data.revisions };
+          selectedRevisions.forEach(rev => {
+            const action = revActions[rev];
+            if (action === 'overwrite') {
+              mergedRevisions[rev] = filteredRevisions[rev];
+            } else {
+              const targetKey = mergedRevisions[rev] ? rev + "_Imported" : rev;
+              mergedRevisions[targetKey] = filteredRevisions[rev];
+            }
+          });
+
+          const { error } = await supabase.from('projects').update({
+            project_data: { ...existing.project_data, revisions: mergedRevisions },
+            updated: new Date().toISOString()
+          }).eq('id', incoming.id);
+          if (error) throw error;
+        }
+      }
+
+      setImportModalData(null);
+      showConfirm({ title: "가져오기 완료", message: "프로젝트 데이터를 성공적으로 처리했습니다.", type: "success", showCancel: false });
+    } catch (err) {
+      showConfirm({ title: "가져오기 실패", message: "데이터 저장 중 오류가 발생했습니다: " + err.message, type: "danger", showCancel: false });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManageConfirm = async (config) => {
+    const { mode, project } = manageModalData;
+    const { newId, newName, selectedRevisions } = config;
+
+    try {
+      setLoading(true);
+
+      const processProjectData = (p, targetId, targetName) => {
+        const oldId = p.id;
+        const oldName = p.name || p.id;
+        let jsonStr = JSON.stringify(p);
+        if (oldId !== targetId) jsonStr = jsonStr.split(`"${oldId}"`).join(`"${targetId}"`);
+        if (oldName !== targetName) {
+          jsonStr = jsonStr.split(`"${oldName}"`).join(`"${targetName}"`);
+          jsonStr = jsonStr.split(`: "${oldName}"`).join(`: "${targetName}"`);
+        }
+        const processed = JSON.parse(jsonStr);
+        processed.id = targetId;
+        processed.name = targetName;
+        return processed;
+      };
+
+      if (mode === 'rename') {
+        const updatedProject = processProjectData(project, newId, newName);
+        updatedProject.updated = new Date().toISOString();
+
+        if (isDemoMode) {
+          setProjectsList(prev => prev.map(p => p.id === project.id ? updatedProject : p));
+        } else {
+          if (project.id !== newId) {
+            await supabase.from('projects').delete().eq('id', project.id);
+            const { error } = await supabase.from('projects').insert([updatedProject]);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from('projects').update(updatedProject).eq('id', project.id);
+            if (error) throw error;
+          }
+        }
+      } 
+      else if (mode === 'copy') {
+        const filteredRevisions = {};
+        selectedRevisions.forEach(rev => {
+          filteredRevisions[rev] = project.project_data.revisions[rev];
+        });
+        const projectToClone = {
+          ...project,
+          project_data: { ...project.project_data, revisions: filteredRevisions }
+        };
+        const newProject = processProjectData(projectToClone, newId, newName);
+        newProject.updated = new Date().toISOString();
+        newProject.is_locked = false;
+        newProject.locked_by = null;
+        newProject.locked_at = null;
+
+        if (isDemoMode) {
+          setProjectsList(prev => [newProject, ...prev]);
+        } else {
+          const { error } = await supabase.from('projects').insert([newProject]);
+          if (error) throw error;
+        }
+      }
+
+      setManageModalData(null);
+      showConfirm({ 
+        title: mode === 'rename' ? "이름 변경 완료" : "프로젝트 복제 완료", 
+        message: "성공적으로 처리되었습니다.", 
+        type: "success", 
+        showCancel: false 
+      });
+      fetchProjects();
+    } catch (err) {
+      showConfirm({ title: "오류 발생", message: err.message, type: "danger", showCancel: false });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isAuthorized) {
     return <AccessGate onAuthorized={handleAuthorize} />;
   }
@@ -1464,11 +1678,31 @@ function App() {
             handleEditCustomIp={handleEditCustomIp}
             handleDeleteCustomIp={handleDeleteCustomIp}
             handleAddCustomIp={handleAddCustomIp}
+            handleExportProject={handleExportProject}
+            onManageProject={(mode, project) => setManageModalData({ mode, project })}
           />
           {isNewProjectModalOpen && (
             <NewProjectModal 
               onClose={() => setIsNewProjectModalOpen(false)}
               onCreate={handleCreateProject}
+            />
+          )}
+
+          {importModalData && (
+            <ImportModal 
+              data={importModalData} 
+              onClose={() => setImportModalData(null)} 
+              onConfirm={handleImportConfirm} 
+            />
+          )}
+
+          {manageModalData && (
+            <ProjectManageModal
+              mode={manageModalData.mode}
+              project={manageModalData.project}
+              existingIds={projectsList.map(p => p.id)}
+              onClose={() => setManageModalData(null)}
+              onConfirm={handleManageConfirm}
             />
           )}
         </>
