@@ -141,6 +141,12 @@ function App() {
   const [globalIpDictionary, setGlobalIpDictionary] = useState(ipCategoryNameMap);
   const [customIpDetails, setCustomIpDetails] = useState([]);
 
+  // ─── [신규] 앱 진입 시 초기 히스토리 엔트리 생성 (뒤로가기 이탈 방지용) ───
+  useEffect(() => {
+    if (!window.history.state) {
+      window.history.pushState({ type: 'DASHBOARD' }, '');
+    }
+  }, []);
   // ─── [Supabase] 초기 프로젝트 목록 로드 ───
   useEffect(() => {
     async function fetchProjects() {
@@ -656,17 +662,36 @@ function App() {
     setDirtyNavigation(null);
   };
 
-  // ─── [신규] 브라우저 뒤로가기 지원 ───
+  // ─── [신규] 브라우저 뒤로가기 지원 및 이탈 방지 ───
   useEffect(() => {
-    const handlePopState = (event) => {
+    const handlePopState = async (event) => {
       if (viewState === 'WORKSPACE') {
-        // 이미 히스토리가 이동된 상태이므로 history.back() 없이 내부 상태만 정리
+        // 워크스페이스에서 뒤로가기 시 대시보드로 이동
         executeExit(true);
+      } else if (viewState === 'DASHBOARD') {
+        // 대시보드에서 뒤로가기 시 (앱 종료 시도) 경고 모달 표시
+        if (!event.state || event.state.type !== 'DASHBOARD') {
+          const confirmed = await showConfirm({
+            title: "앱 종료 확인",
+            message: "Mitus-IP-Web을 종료하고 이전 페이지로 돌아가시겠습니까?",
+            type: "warning",
+            confirmText: "종료",
+            cancelText: "유지"
+          });
+
+          if (confirmed) {
+            // 실제로 이전 페이지로 이동
+            window.history.back();
+          } else {
+            // 히스토리를 다시 현재 앱 상태로 복구하여 유지
+            window.history.pushState({ type: 'DASHBOARD' }, '');
+          }
+        }
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [viewState]);
+  }, [viewState, showConfirm]);
 
   const openWorkspace = async (projectId, phase) => {
     const proj = projectsList.find(p => p.id === projectId);
@@ -1378,7 +1403,7 @@ function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${pName}_${rev}_Export.zip`;
+      link.download = `${pName}_${rev}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1512,9 +1537,9 @@ function App() {
 
               {/* ── 글로벌 유틸리티 영역 ── */}
               <div className="flex gap-2">
-                {activeProject.isLatest && (
+                {activeProject && (
                   <button onClick={handleSaveMD} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs text-white bg-slate-800 hover:bg-slate-900 transition-colors shadow-sm">
-                    <Download size={14} /> .md 백업
+                    <Download size={14} /> Download Report (.md)
                   </button>
                 )}
                 { (() => {
