@@ -5,6 +5,7 @@ import ActionBar from '../ActionBar';
 import { LayoutDashboard, Lock, Copy } from 'lucide-react';
 import { DEFAULT_OVERVIEW_SCHEMA, MAJOR_SPECS_SCHEMA, ORGANIZATION_SCHEMA } from '../../data/schemaConfig';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
@@ -74,10 +75,11 @@ const IpDeleteModal = ({ type, ipName, references, onConfirm, onCancel, customTi
   );
 };
 
-const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, revisionLogData, faReportData, onEditingStateChange }) => {
+const ProjectOverviewTab = ({ data, currentStage, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, revisionLogData, faReportData, onEditingStateChange, onForceUnlock, globalIpDictionary, onAddCustomIp }) => {
   const safeData = data || {};
   const [unlockedOverview, setUnlockedOverview] = useState(false);
-  const [isTemplateEditing, setIsTemplateEditing] = useState(false);
+  
+  const showConfirm = useConfirm();
   
   const [overviewSchema, setOverviewSchema] = useState(safeData.UI_Schemas?.Contents || DEFAULT_OVERVIEW_SCHEMA);
   const [specsSchema, setSpecsSchema] = useState(safeData.UI_Schemas?.Specs || MAJOR_SPECS_SCHEMA);
@@ -151,8 +153,15 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
     setSpecsSchema(newSchema);
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Specs: newSchema } });
   };
-  const handleSpecsDelete = (id) => {
-    if (window.confirm("이 스펙 항목을 삭제하시겠습니까?")) {
+  const handleSpecsDelete = async (id) => {
+    const confirmed = await showConfirm({
+      title: "항목 삭제 확인",
+      message: "이 스펙 항목을 삭제하시겠습니까?",
+      type: "danger",
+      confirmText: "삭제"
+    });
+
+    if (confirmed) {
       const newSchema = specsSchema.filter(f => f.id !== id);
       setSpecsSchema(newSchema);
       const newData = { ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Specs: newSchema } };
@@ -164,12 +173,9 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
       if (onImmediateUpdate) onImmediateUpdate(newData);
     }
   };
-  const handleSpecsClone = (fieldToClone) => {
-    const newId = `${fieldToClone.id}_clone_${Date.now()}`;
-    const clonedField = { ...fieldToClone, id: newId, label: `${fieldToClone.label} (Copy)` };
-    const index = specsSchema.findIndex(f => f.id === fieldToClone.id);
-    const newSchema = [...specsSchema];
-    newSchema.splice(index + 1, 0, clonedField);
+  const handleSpecsAdd = () => {
+    const newId = `Spec_${Date.now()}`;
+    const newSchema = [...specsSchema, { id: newId, label: 'New Spec' }];
     setSpecsSchema(newSchema);
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Specs: newSchema } });
   };
@@ -180,8 +186,15 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
     setOrgSchema(newSchema);
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Organization: newSchema } });
   };
-  const handleOrgDelete = (id) => {
-    if (window.confirm("이 조직 항목을 삭제하시겠습니까?")) {
+  const handleOrgDelete = async (id) => {
+    const confirmed = await showConfirm({
+      title: "항목 삭제 확인",
+      message: "이 조직 항목을 삭제하시겠습니까?",
+      type: "danger",
+      confirmText: "삭제"
+    });
+
+    if (confirmed) {
       const newSchema = orgSchema.filter(f => f.id !== id);
       setOrgSchema(newSchema);
       const newData = { ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Organization: newSchema } };
@@ -193,12 +206,9 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
       if (onImmediateUpdate) onImmediateUpdate(newData);
     }
   };
-  const handleOrgClone = (fieldToClone) => {
-    const newId = `${fieldToClone.id}_clone_${Date.now()}`;
-    const clonedField = { ...fieldToClone, id: newId, label: `${fieldToClone.label} (Copy)` };
-    const index = orgSchema.findIndex(f => f.id === fieldToClone.id);
-    const newSchema = [...orgSchema];
-    newSchema.splice(index + 1, 0, clonedField);
+  const handleOrgAdd = () => {
+    const newId = `Org_${Date.now()}`;
+    const newSchema = [...orgSchema, { id: newId, label: 'New Field' }];
     setOrgSchema(newSchema);
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Organization: newSchema } });
   };
@@ -209,12 +219,23 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
     setOverviewSchema(newSchema);
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Contents: newSchema } });
   };
-  const handleSchemaDelete = (id) => {
-    if (window.confirm("이 항목을 삭제하시겠습니까?")) {
-      const newSchema = overviewSchema.filter(field => field.id !== id);
+  const handleSchemaDelete = async (id) => {
+    const confirmed = await showConfirm({
+      title: "항목 삭제 확인",
+      message: "이 항목을 삭제하시겠습니까?",
+      type: "danger",
+      confirmText: "삭제"
+    });
+
+    if (confirmed) {
+      const newSchema = overviewSchema.filter(f => f.id !== id);
       setOverviewSchema(newSchema);
       const newData = { ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Contents: newSchema } };
-      delete newData[id];
+      if (newData.Contents) {
+        const newContentsData = { ...newData.Contents };
+        delete newContentsData[id];
+        newData.Contents = newContentsData;
+      }
       if (onImmediateUpdate) onImmediateUpdate(newData);
     }
   };
@@ -241,8 +262,15 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
     if (onImmediateUpdate) onImmediateUpdate({ ...safeData, UI_Schemas: { ...(safeData.UI_Schemas || {}), Contents: newSchema } });
   };
 
-  const handleTableTemplateRowDelete = (fieldId, rowId) => {
-    if (window.confirm("이 테이블 항목을 삭제하시겠습니까?")) {
+  const handleTableTemplateRowDelete = async (fieldId, rowId) => {
+    const confirmed = await showConfirm({
+      title: "항목 삭제",
+      message: "이 테이블 항목을 삭제하시겠습니까?",
+      type: "danger",
+      confirmText: "삭제"
+    });
+
+    if (confirmed) {
       const newSchema = overviewSchema.map(field => {
         if (field.id === fieldId && field.type === 'table') {
           const newRows = (field.templateRows || []).filter(r => r.id !== rowId);
@@ -304,10 +332,35 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
     setUnlockedOverview(false);
   };
 
-  const initialCategory = Object.keys(ipCategoryNameMap)[0] || '';
-  const initialIp = (ipCategoryNameMap[initialCategory] || [])[0] || '';
+
+  const dictToUse = globalIpDictionary || ipCategoryNameMap;
+  const initialCategory = Object.keys(dictToUse)[0] || '';
+  const initialIp = (dictToUse[initialCategory] || [])[0] || '';
   const [selCategory, setSelCategory] = useState(initialCategory);
   const [selIpName, setSelIpName] = useState(initialIp);
+
+  const [customIpModalOpen, setCustomIpModalOpen] = useState(false);
+  const [customIpForm, setCustomIpForm] = useState({ category: '', name: '', description: '' });
+
+  const handleCustomIpSubmit = async () => {
+    if (!customIpForm.category || !customIpForm.name || !customIpForm.description) {
+      alert('카테고리, 이름, 설명을 모두 입력해주세요.');
+      return;
+    }
+    const success = await onAddCustomIp(customIpForm.category, customIpForm.name, customIpForm.description);
+    if (success) {
+      setSelCategory(customIpForm.category);
+      setSelIpName(customIpForm.name);
+      const current = safeData.IP_Blocks || [];
+      if (!current.includes(customIpForm.name)) {
+        const newData = { ...safeData, IP_Blocks: [...current, customIpForm.name] };
+        if (onImmediateUpdate) onImmediateUpdate(newData);
+      }
+      setCustomIpModalOpen(false);
+      setCustomIpForm({ category: '', name: '', description: '' });
+    }
+  };
+
 
   const handleOsatToggle = (option) => {
     if (isOverviewDisabled) return;
@@ -337,6 +390,11 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
   }, [revisionLogData, faReportData]);
 
   const addIpBlock = () => {
+    if (selIpName === '__CUSTOM__') {
+      setCustomIpForm({ category: selCategory, name: '', description: '' });
+      setCustomIpModalOpen(true);
+      return;
+    }
     if ((safeData.IP_Blocks || []).includes(selIpName)) {
       setModal({ type: 'blocked', ipName: selIpName, references: ['이미 Project IP Blocks 목록에 등록된 IP입니다.'], onConfirm: null, customTitle: '중복 IP', customMessage: `'${selIpName}'은(는) 이미 존재하는 IP입니다. 동일한 IP를 중복 추가할 수 없습니다.` });
       return;
@@ -379,26 +437,26 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
       />
 
       {/* ── 헤더 영역 ── */}
-      <div className="xl:col-span-12 w-full flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 mb-6 gap-4">
-        <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-3">
-          <LayoutDashboard size={28} className="text-blue-600" />
-          Project Overview
-          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1 ml-1"><Lock size={11} />Read-Only</span>}
-        </h1>
+      <div className="xl:col-span-12 w-full flex flex-col sm:flex-row items-start sm:items-center pb-4 border-b border-slate-200 mb-6 gap-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-3">
+            <LayoutDashboard size={28} className="text-blue-600" />
+            Project Overview
+          </h1>
+          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1"><Lock size={11} />Read-Only</span>}
+        </div>
         
-        <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
-          {!isOverviewDisabled && (
-            <div className="flex items-center gap-2 bg-indigo-50 px-2 py-1.5 rounded-lg border border-indigo-100">
-              <button onClick={() => setIsTemplateEditing(!isTemplateEditing)} className={`text-xs font-bold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 ${isTemplateEditing ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-600 hover:bg-indigo-100"}`}>
-                {isTemplateEditing ? "✅ 편집 완료" : "⚙️ 템플릿 편집"}
-              </button>
-              {isTemplateEditing && (
-                <button onClick={() => { if (window.confirm("템플릿을 기본값으로 완전히 초기화하시겠습니까?")) { setOverviewSchema(DEFAULT_OVERVIEW_SCHEMA); setSpecsSchema(MAJOR_SPECS_SCHEMA); setOrgSchema(ORGANIZATION_SCHEMA); setIsTemplateEditing(false); if(onImmediateUpdate) onImmediateUpdate({...safeData, UI_Schemas: {Contents: DEFAULT_OVERVIEW_SCHEMA, Specs: MAJOR_SPECS_SCHEMA, Organization: ORGANIZATION_SCHEMA}}); } }} className="text-xs font-bold text-red-500 hover:text-white bg-white hover:bg-red-500 border border-red-200 hover:border-red-500 px-2 py-1.5 rounded-md transition-all flex items-center gap-1">🔄 초기화</button>
-              )}
-            </div>
-          )}
-          <div className="shrink-0 border-l pl-4 border-slate-200">
-            <ActionBar isGlobalArchived={isArchived} isEditing={unlockedOverview} onEdit={() => setUnlockedOverview(true)} onLock={handleSubmit} />
+        <div className="flex items-center gap-3 flex-wrap">
+          
+          <div className="shrink-0 border-l pl-3 border-slate-200">
+            <ActionBar 
+              isGlobalArchived={isArchived} 
+              isEditing={unlockedOverview} 
+              onEdit={() => setUnlockedOverview(true)} 
+              onLock={handleSubmit} 
+              lockReason={lockReason}
+              onForceUnlock={onForceUnlock}
+            />
           </div>
         </div>
       </div>
@@ -422,29 +480,38 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSpecsDragEnd}>
             <SortableContext items={specsSchema.map(f => f.id)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-2 gap-4">
-                {specsSchema.map((field) => (
+                {specsSchema.map((field) => {
+                  const isCustomSpec = !MAJOR_SPECS_SCHEMA.some(s => s.id === field.id);
+                  return (
                   <SortableField 
-                    key={field.id} id={field.id} isEditing={isTemplateEditing}
-                    className={`${field.colSpan === 2 ? 'col-span-2' : 'col-span-1'} ${isTemplateEditing ? "p-2 bg-indigo-50/60 border border-indigo-100 rounded-xl transition-all" : ""}`}
+                    key={field.id} id={field.id} isEditing={unlockedOverview}
+                    className={`${field.colSpan === 2 ? 'col-span-2' : 'col-span-1'} ${unlockedOverview ? "relative group" : ""}`}
                   >
                     {(dragListeners, dragAttributes) => (
-                      isTemplateEditing ? (
-                        <div className="flex items-center gap-1">
-                          <div className="cursor-grab active:cursor-grabbing text-indigo-400 hover:text-indigo-700 px-0.5 shrink-0" {...dragListeners} {...dragAttributes}>⠿</div>
-                          <input type="text" value={field.label} onChange={(e) => handleSpecsLabelChange(field.id, e.target.value)} className="flex-1 min-w-0 border border-indigo-200 rounded-md px-2 py-1.5 text-xs font-bold text-indigo-900 bg-white outline-none" />
-                          <button onClick={() => handleSpecsClone(field)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md shrink-0"><Copy size={14} /></button>
-                          <button onClick={() => handleSpecsDelete(field.id)} className="p-1.5 text-red-400 hover:bg-red-100 rounded-md shrink-0"><X size={14} /></button>
+                      <>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5 flex-1">
+                            {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500" {...dragListeners} {...dragAttributes}>⠿</div>}
+                            {unlockedOverview && isCustomSpec ? (
+                              <input type="text" value={field.label} onChange={(e) => handleSpecsLabelChange(field.id, e.target.value)} className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:border-amber-400 w-1/2 uppercase tracking-wider" placeholder="항목 이름" />
+                            ) : (
+                              <label className={`${labelClass} mb-0 ml-0`}>{field.label}</label>
+                            )}
+                          </div>
+                          {unlockedOverview && isCustomSpec && (
+                            <button onClick={() => handleSpecsDelete(field.id)} className="text-slate-300 hover:text-red-500 transition-colors p-0.5"><X size={14} /></button>
+                          )}
                         </div>
-                      ) : (
-                        <>
-                          <label className={labelClass}>{field.label}</label>
-                          <input type="text" value={safeData.Specs?.[field.id] || ''} onChange={(e) => handleNestedChange('Specs', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled} />
-                        </>
-                      )
+                        <input type="text" value={safeData.Specs?.[field.id] || ''} onChange={(e) => handleNestedChange('Specs', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled} />
+                      </>
                     )}
                   </SortableField>
-                ))}
+                  );
+                })}
               </div>
+              {unlockedOverview && (
+                <button onClick={handleSpecsAdd} className="w-full py-2.5 mt-4 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2">➕ 새 스펙 항목 추가</button>
+              )}
             </SortableContext>
           </DndContext>
         </div>
@@ -464,33 +531,42 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleOrgDragEnd}>
             <SortableContext items={orgSchema.map(f => f.id)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-3 gap-3">
-                {orgSchema.map((field) => (
+                {orgSchema.map((field) => {
+                  const isCustomOrg = !ORGANIZATION_SCHEMA.some(s => s.id === field.id);
+                  return (
                   <SortableField 
-                    key={field.id} id={field.id} isEditing={isTemplateEditing}
-                    className={`${field.colSpan === 3 ? 'col-span-3' : 'col-span-1'} ${isTemplateEditing ? "p-2 bg-indigo-50/60 border border-indigo-100 rounded-xl transition-all" : ""}`}
+                    key={field.id} id={field.id} isEditing={unlockedOverview}
+                    className={`${field.colSpan === 3 ? 'col-span-3' : 'col-span-1'} ${unlockedOverview ? "relative group" : ""}`}
                   >
                     {(dragListeners, dragAttributes) => (
-                      isTemplateEditing ? (
-                        <div className="flex items-center gap-1">
-                          <div className="cursor-grab active:cursor-grabbing text-indigo-400 hover:text-indigo-700 px-0.5 shrink-0" {...dragListeners} {...dragAttributes}>⠿</div>
-                          <input type="text" value={field.label} onChange={(e) => handleOrgLabelChange(field.id, e.target.value)} className="flex-1 min-w-0 border border-indigo-200 rounded-md px-2 py-1.5 text-xs font-bold text-indigo-900 bg-white outline-none" />
-                          <button onClick={() => handleOrgClone(field)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md shrink-0"><Copy size={14} /></button>
-                          <button onClick={() => handleOrgDelete(field.id)} className="p-1.5 text-red-400 hover:bg-red-100 rounded-md shrink-0"><X size={14} /></button>
-                        </div>
-                      ) : (
-                        <>
-                          <label className={labelClass}>{field.label}</label>
-                          {field.type === 'textarea' ? (
-                            <textarea rows={field.rows || 2} value={safeData.Organization?.[field.id] || ''} onChange={(e) => handleNestedChange('Organization', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled}></textarea>
-                          ) : (
-                            <input type="text" value={safeData.Organization?.[field.id] || ''} onChange={(e) => handleNestedChange('Organization', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled} />
+                      <>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5 flex-1">
+                            {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500" {...dragListeners} {...dragAttributes}>⠿</div>}
+                            {unlockedOverview && isCustomOrg ? (
+                              <input type="text" value={field.label} onChange={(e) => handleOrgLabelChange(field.id, e.target.value)} className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:border-amber-400 w-1/2 uppercase tracking-wider" placeholder="항목 이름" />
+                            ) : (
+                              <label className={`${labelClass} mb-0 ml-0`}>{field.label}</label>
+                            )}
+                          </div>
+                          {unlockedOverview && isCustomOrg && (
+                            <button onClick={() => handleOrgDelete(field.id)} className="text-slate-300 hover:text-red-500 transition-colors p-0.5"><X size={14} /></button>
                           )}
-                        </>
-                      )
+                        </div>
+                        {field.type === 'textarea' ? (
+                          <textarea rows={field.rows || 2} value={safeData.Organization?.[field.id] || ''} onChange={(e) => handleNestedChange('Organization', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled}></textarea>
+                        ) : (
+                          <input type="text" value={safeData.Organization?.[field.id] || ''} onChange={(e) => handleNestedChange('Organization', field.id, e.target.value)} className={inputClass} disabled={isOverviewDisabled} />
+                        )}
+                      </>
                     )}
                   </SortableField>
-                ))}
+                  );
+                })}
               </div>
+              {unlockedOverview && (
+                <button onClick={handleOrgAdd} className="col-span-3 w-full py-2.5 mt-4 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2">➕ 새 조직 항목 추가</button>
+              )}
             </SortableContext>
           </DndContext>
         </div>
@@ -508,11 +584,12 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
           <div className="space-y-4">
             {!isOverviewDisabled && (
               <div className="flex flex-col sm:flex-row gap-3">
-                <select value={selCategory} onChange={(e) => { setSelCategory(e.target.value); setSelIpName(ipCategoryNameMap[e.target.value][0]); }} className="flex-1 border border-indigo-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-700 bg-white shadow-sm outline-none">
-                  {Object.keys(ipCategoryNameMap).map(c => <option key={c} value={c}>{c}</option>)}
+                <select value={selCategory} onChange={(e) => { setSelCategory(e.target.value); setSelIpName(dictToUse[e.target.value][0]); }} className="flex-1 border border-indigo-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-700 bg-white shadow-sm outline-none">
+                  {Object.keys(dictToUse).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select value={selIpName} onChange={(e) => setSelIpName(e.target.value)} className="flex-1 border border-indigo-200 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-700 bg-white shadow-sm outline-none">
-                  {(ipCategoryNameMap[selCategory] || []).map(ip => <option key={ip} value={ip}>{ip}</option>)}
+                  {(dictToUse[selCategory] || []).map(ip => <option key={ip} value={ip}>{ip}</option>)}
+                  <option value="__CUSTOM__">➕ 새 IP 직접 입력 (Custom)</option>
                 </select>
                 <button onClick={addIpBlock} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-lg shadow-sm transition-colors whitespace-nowrap">+ Add New IP</button>
               </div>
@@ -546,52 +623,33 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleContentsDragEnd}>
             <SortableContext items={overviewSchema.map(f => f.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-6">
-                {overviewSchema.map((field) => (
+                {overviewSchema.map((field) => {
+                  const isCustomContents = !DEFAULT_OVERVIEW_SCHEMA.some(s => s.id === field.id);
+                  const defaultField = DEFAULT_OVERVIEW_SCHEMA.find(s => s.id === field.id);
+                  const defaultRows = defaultField?.templateRows || [];
+                  
+                  return (
                   <SortableField 
-                    key={field.id} id={field.id} isEditing={isTemplateEditing}
-                    className={isTemplateEditing ? "p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl transition-all" : ""}
+                    key={field.id} id={field.id} isEditing={unlockedOverview}
+                    className={unlockedOverview ? "relative group" : ""}
                   >
                     {(dragListeners, dragAttributes) => (
-                      isTemplateEditing ? (
-                        <div className="flex flex-col gap-3 w-full">
-                          <div className="flex items-center gap-3">
-                            <div className="cursor-grab active:cursor-grabbing text-indigo-400 font-bold w-6 text-center" title="드래그하여 이동" {...dragListeners} {...dragAttributes}>⠿</div>
-                            <input type="text" value={field.label} onChange={(e) => handleSchemaLabelChange(field.id, e.target.value)} className="flex-1 border border-indigo-200 rounded-lg px-3 py-2 text-sm font-bold text-indigo-900 bg-white outline-none" />
-                            <button onClick={() => handleSchemaDelete(field.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg"><X size={18} /></button>
-                          </div>
-                          
-                          {/* 🚀 테이블 타입일 경우 하위 행(Row) 편집 UI 추가 */}
-                          {field.type === 'table' && (
-                            <div className="ml-9 p-4 bg-indigo-50/50 border border-indigo-200 rounded-xl shadow-inner">
-                              <div className="text-xs font-extrabold text-indigo-800 mb-3 flex items-center justify-between">
-                                <span>📊 테이블 항목(Row) 템플릿 관리</span>
-                              </div>
-                              <div className="space-y-2">
-                                {(field.templateRows || []).map((row, rIdx) => (
-                                  <div key={row.id} className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
-                                    <span className="text-xs font-bold text-slate-400 w-5 text-center">{rIdx + 1}.</span>
-                                    <input 
-                                      type="text" 
-                                      value={row.item} 
-                                      onChange={(e) => handleTableTemplateRowChange(field.id, row.id, e.target.value)} 
-                                      className="flex-1 border-none bg-transparent px-2 py-1 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 rounded"
-                                      placeholder="항목 이름 (예: Input Voltage)"
-                                    />
-                                    <button onClick={() => handleTableTemplateRowDelete(field.id, row.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"><X size={16}/></button>
-                                  </div>
-                                ))}
-                              </div>
-                              <button onClick={() => handleTableTemplateRowAdd(field.id)} className="mt-3 px-4 py-2 bg-white hover:bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg transition-colors w-full border border-dashed border-indigo-300 flex justify-center items-center gap-1 shadow-sm">
-                                ➕ 새 항목(Row) 추가
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
                         <div className="flex flex-col gap-2 w-full">
-                          <label className={labelClass}>{field.label}</label>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5 flex-1">
+                              {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500" {...dragListeners} {...dragAttributes}>⠿</div>}
+                              {unlockedOverview && isCustomContents ? (
+                                <input type="text" value={field.label} onChange={(e) => handleSchemaLabelChange(field.id, e.target.value)} className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:border-amber-400 w-1/2 uppercase tracking-wider" placeholder="섹션 이름" />
+                              ) : (
+                                <label className={`${labelClass} mb-0 ml-0`}>{field.label}</label>
+                              )}
+                            </div>
+                            {unlockedOverview && isCustomContents && (
+                              <button onClick={() => handleSchemaDelete(field.id)} className="text-slate-300 hover:text-red-500 transition-colors p-0.5"><X size={14} /></button>
+                            )}
+                          </div>
+
                           {field.type === 'table' ? (
-                            // 🚀 테이블 형태의 입력 모드 렌더링
                             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
                               <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold text-[11px] uppercase tracking-wider">
@@ -600,16 +658,22 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
                                     <th className="px-4 py-3 border-r border-slate-200 w-[35%]">Specification</th>
                                     <th className="px-4 py-3 border-r border-slate-200 w-[15%] text-center">Unit</th>
                                     <th className="px-4 py-3 w-[25%]">Remarks</th>
+                                    {unlockedOverview && <th className="px-2 py-3 w-[5%] text-center"></th>}
                                   </tr>
                                 </thead>
                                 <tbody className="bg-white">
                                   {(field.templateRows || []).map((row) => {
                                     const tableData = typeof safeData[field.id] === 'object' && safeData[field.id] !== null ? safeData[field.id] : {};
                                     const rowData = tableData[row.id] || { spec: '', unit: '', remarks: '' };
+                                    const isCustomRow = !defaultRows.some(r => r.id === row.id);
                                     return (
                                       <tr key={row.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
                                         <td className="px-4 py-2 border-r border-slate-200 font-bold text-slate-700 bg-slate-50/30">
-                                          {row.item}
+                                          {unlockedOverview && isCustomRow ? (
+                                            <input type="text" value={row.item} onChange={(e) => handleTableTemplateRowChange(field.id, row.id, e.target.value)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-amber-400" placeholder="항목명" />
+                                          ) : (
+                                            row.item
+                                          )}
                                         </td>
                                         <td className="p-0 border-r border-slate-200">
                                           <input type="text" value={rowData.spec} onChange={(e) => handleTableDataChange(field.id, row.id, 'spec', e.target.value)} className="w-full h-full px-4 py-2.5 bg-transparent outline-none focus:bg-blue-50 transition-colors text-slate-800 font-medium placeholder:text-slate-300" disabled={isOverviewDisabled} placeholder="ex) 3.0 ~ 4.5" />
@@ -617,31 +681,73 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, projectId, dbUpdat
                                         <td className="p-0 border-r border-slate-200">
                                           <input type="text" value={rowData.unit} onChange={(e) => handleTableDataChange(field.id, row.id, 'unit', e.target.value)} className="w-full h-full px-4 py-2.5 bg-transparent outline-none focus:bg-blue-50 transition-colors text-center text-slate-800 font-medium placeholder:text-slate-300" disabled={isOverviewDisabled} placeholder="ex) V" />
                                         </td>
-                                        <td className="p-0">
+                                        <td className="p-0 border-r border-slate-200">
                                           <input type="text" value={rowData.remarks} onChange={(e) => handleTableDataChange(field.id, row.id, 'remarks', e.target.value)} className="w-full h-full px-4 py-2.5 bg-transparent outline-none focus:bg-blue-50 transition-colors text-slate-800 font-medium placeholder:text-slate-300" disabled={isOverviewDisabled} placeholder="비고 입력..." />
                                         </td>
+                                        {unlockedOverview && (
+                                          <td className="p-0 text-center align-middle">
+                                            {isCustomRow && (
+                                              <button onClick={() => handleTableTemplateRowDelete(field.id, row.id)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={14} /></button>
+                                            )}
+                                          </td>
+                                        )}
                                       </tr>
                                     );
                                   })}
                                 </tbody>
                               </table>
+                              {unlockedOverview && (
+                                <button onClick={() => handleTableTemplateRowAdd(field.id)} className="w-full py-2 bg-slate-50 hover:bg-amber-50 text-amber-600 text-xs font-bold transition-colors border-t border-slate-200 flex justify-center items-center gap-1">➕ 새 테이블 항목(Row) 추가</button>
+                              )}
                             </div>
                           ) : (
                             <textarea rows={field.rows || 4} value={safeData[field.id] || ''} onChange={(e) => handleChange({target: {name: field.id, value: e.target.value}})} className={`${inputClass} ${field.fontMono ? 'font-mono' : ''}`} disabled={isOverviewDisabled} placeholder={field.placeholder || ''} />
                           )}
                         </div>
-                      )
                     )}
                   </SortableField>
-                ))}
-                {isTemplateEditing && (
-                  <button onClick={handleSchemaAdd} className="w-full py-3.5 mt-2 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2">➕ 새 템플릿 항목 추가</button>
+                  );
+                })}
+                {unlockedOverview && (
+                  <button onClick={handleSchemaAdd} className="w-full py-3.5 mt-4 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-sm hover:bg-amber-50 transition-colors flex items-center justify-center gap-2">➕ 새 컨텐츠 섹션 추가</button>
                 )}
               </div>
             </SortableContext>
           </DndContext>
         </div>
       </div>
+
+      {/* ── Custom IP 추가 모달 ── */}
+      {customIpModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15,23,42,0.45)' }}>
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border overflow-hidden">
+            <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 to-blue-500" />
+            <div className="p-6">
+              <h2 className="text-xl font-extrabold text-slate-800 mb-4">새로운 IP 직접 등록</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">카테고리 <span className="text-red-500">*</span></label>
+                  <input type="text" value={customIpForm.category} onChange={e => setCustomIpForm({...customIpForm, category: e.target.value})} className="w-full px-3 py-2 border rounded outline-none focus:border-indigo-400" placeholder="예: Power_Regulation" />
+                  <p className="text-[10px] text-slate-400 mt-1">기존 카테고리를 입력하거나 새 카테고리를 만들 수 있습니다.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">IP 이름 <span className="text-red-500">*</span></label>
+                  <input type="text" value={customIpForm.name} onChange={e => setCustomIpForm({...customIpForm, name: e.target.value})} className="w-full px-3 py-2 border rounded outline-none focus:border-indigo-400" placeholder="예: LDO_1V2" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">상세 설명 (필수) <span className="text-red-500">*</span></label>
+                  <textarea value={customIpForm.description} onChange={e => setCustomIpForm({...customIpForm, description: e.target.value})} className="w-full px-3 py-2 border rounded outline-none focus:border-indigo-400" placeholder="이 IP의 목적, 핵심 스펙 등을 간략히 적어주세요. (파편화 방지용)" rows={3} />
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-2">
+                <button onClick={() => setCustomIpModalOpen(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">취소</button>
+                <button onClick={handleCustomIpSubmit} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-colors">등록하기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

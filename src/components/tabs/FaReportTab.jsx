@@ -7,6 +7,7 @@ import {
 import ActionBar from '../ActionBar';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 // ── FA 카드 좌측 Color Bar ────────────────────────────────────────
 const getFaColorBar = (fa) => {
@@ -41,6 +42,7 @@ const gapStyle = (g) =>
 // ── 기본 폼 ──────────────────────────────────────────────────────────
 const makeDefault = (ipBlock = '', currentRevision = '') => ({
   ipBlock,
+  subBlock: null,
   sampleSourceVer: '',
   reportedInStage: currentRevision,
   versionGap: '',
@@ -60,10 +62,12 @@ export default function FaReportTab({
   currentRevision,
   isArchived,
   onSubmit,
-  onImmediateUpdate,
   onEditingStateChange,
+  onForceUnlock,
   projectId,
-  dbUpdatedAt
+  dbUpdatedAt,
+  lockReason,
+  ipIndexData
 }) {
   const faReports = useMemo(() => data?.faReports || [], [data]);
   const ipBlocks = useMemo(
@@ -78,7 +82,7 @@ export default function FaReportTab({
   const [selectedIp, setSelectedIp] = useState('All');
   const [formData, setFormData] = useState(makeDefault(ipBlocks[0] || '', currentRevision));
   const [editingId, setEditingId] = useState(null);
-  const [deleteModal, setDeleteModal] = useState(null);
+  const showConfirm = useConfirm();
   const [severityFilter, setSeverityFilter] = useState('ALL');
 
   const [expandedSections, setExpandedSections] = useState({
@@ -159,14 +163,21 @@ export default function FaReportTab({
     setEditingId(fa.faId);
   };
 
-  const confirmDelete = () => {
-    if (!deleteModal) return;
-    const updated = faReports.filter(f => f.faId !== deleteModal.faId);
-    const newData = { ...data, faReports: updated };
-    if (onImmediateUpdate) onImmediateUpdate(newData);
-    if (onSubmit) onSubmit(newData);
-    setDeleteModal(null);
-    if (editingId === deleteModal.faId) resetForm();
+  const handleDeleteRequest = async (fa) => {
+    const confirmed = await showConfirm({
+      title: "FA 리포트 삭제",
+      message: `정말로 [${fa.faId}] 항목을 삭제하시겠습니까?`,
+      type: "danger",
+      confirmText: "영구 삭제"
+    });
+
+    if (confirmed) {
+      const updated = faReports.filter(f => f.faId !== fa.faId);
+      const newData = { ...data, faReports: updated };
+      if (onImmediateUpdate) onImmediateUpdate(newData);
+      if (onSubmit) onSubmit(newData);
+      if (editingId === fa.faId) resetForm();
+    }
   };
 
   // ── 필터된 카드 목록 ─────────────────────────────────────────────
@@ -215,18 +226,22 @@ export default function FaReportTab({
       />
 
       {/* ── 헤더 (Title + ActionBar) ── */}
-      <div className="flex justify-between items-center pb-4 border-b border-slate-200 mb-6">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-          <FileSearch size={28} className="text-blue-600" />
-          FA Reports
-          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1 ml-1"><Lock size={11} />Read-Only</span>}
-        </h1>
-        <div className="shrink-0">
+      <div className="flex items-center gap-6 pb-4 border-b border-slate-200 mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+            <FileSearch size={28} className="text-blue-600" />
+            FA Reports
+          </h1>
+          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1"><Lock size={11} />Read-Only</span>}
+        </div>
+        <div className="shrink-0 border-l pl-3 border-slate-200">
           <ActionBar
             isGlobalArchived={isArchived}
             isEditing={isTabEditing}
             onEdit={() => setIsTabEditing(true)}
             onLock={handleLock}
+            lockReason={lockReason}
+            onForceUnlock={onForceUnlock}
           />
         </div>
       </div>
@@ -290,12 +305,25 @@ export default function FaReportTab({
             <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-200 pb-2">
               <GitBranch size={14} className="text-slate-500" />IP 및 버전 매핑
             </h3>
-            <div>
-              <label className={lc}>IP Block <span className="text-red-500">*</span></label>
-              <select name="ipBlock" value={formData.ipBlock} onChange={handleInput} disabled={isReadOnly} className={ic}>
-                <option value="">선택...</option>
-                {ipBlocks.map(ip => <option key={ip} value={ip}>{ip}</option>)}
-              </select>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <label className={lc}>IP Block <span className="text-red-500">*</span></label>
+                <select name="ipBlock" value={formData.ipBlock} onChange={handleInput} disabled={isReadOnly} className={ic}>
+                  <option value="">선택...</option>
+                  {ipBlocks.map(ip => <option key={ip} value={ip}>{ip}</option>)}
+                </select>
+              </div>
+              {ipIndexData && ipIndexData[formData.ipBlock] && ipIndexData[formData.ipBlock].Sub_Blocks && ipIndexData[formData.ipBlock].Sub_Blocks.length > 0 && (
+                <div className="flex-1">
+                  <label className={lc}>Sub-Block / Level</label>
+                  <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => setFormData(p => ({ ...p, subBlock: e.target.value || null }))} disabled={isReadOnly} className={ic}>
+                    <option value="">[Top-Level / Overall]</option>
+                    {ipIndexData[formData.ipBlock].Sub_Blocks.map(sb => (
+                      <option key={sb.id} value={sb.name}>{sb.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -504,7 +532,10 @@ export default function FaReportTab({
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mb-2">
                                       <div className="flex items-center gap-1 text-xs text-gray-500 min-w-0">
                                         <Tag size={10} className="shrink-0 text-gray-400" />
-                                        <span className="font-semibold text-gray-600 truncate">{fa.ipBlock || '–'}</span>
+                                        <span className="font-semibold text-gray-600 truncate">
+                                          {fa.ipBlock || '–'}
+                                          {fa.subBlock && <span className="text-[10px] text-indigo-500 ml-1">➔ {fa.subBlock}</span>}
+                                        </span>
                                       </div>
                                       <div className="flex items-center gap-1 text-xs text-gray-500 min-w-0">
                                         <Building2 size={10} className="shrink-0 text-gray-400" />
@@ -533,7 +564,7 @@ export default function FaReportTab({
                                   {!isArchived && (
                                     <div className="flex gap-0.5 shrink-0 ml-1 mt-0.5">
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setDeleteModal(fa); }}
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteRequest(fa); }}
                                         disabled={fa.isLinkedToLog}
                                         className={`p-1.5 rounded transition-colors ${fa.isLinkedToLog ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
                                       >
@@ -573,25 +604,7 @@ export default function FaReportTab({
           })()}
         </div>
       </div>
-      {/* 삭제 확인 모달 */}
-      {deleteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
-            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2 text-red-600">
-              <AlertCircle size={19} /> 삭제 확인
-            </h3>
-            <p className="mb-4 text-gray-600 text-sm">정말로 이 항목을 삭제하시겠습니까?</p>
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-              <span className="text-red-400 text-xs font-bold uppercase tracking-wide">대상</span>
-              <code className="text-sm font-mono font-bold text-red-700 break-all">{deleteModal.faId}</code>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setDeleteModal(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium text-sm">취소</button>
-              <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium text-sm">영구 삭제</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODALS SECTION */}
     </div>
   );
 }

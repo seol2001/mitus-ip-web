@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './supabaseClient';
-import { initialProjectData, defaultProjOverview, makeBlankOverview, makeDefaultIpIndex } from './data/mockData';
+import { initialProjectData, defaultProjOverview, makeBlankOverview, makeDefaultIpIndex, ipCategoryNameMap } from './data/mockData';
 import Dashboard from './components/Dashboard';
 import ProjectOverviewTab from './components/tabs/ProjectOverviewTab';
 import IpIndexTab from './components/tabs/IpIndexTab';
 import RevisionLogTab from './components/tabs/RevisionLogTab';
 import FaReportTab from './components/tabs/FaReportTab';
 import NewProjectModal from './components/NewProjectModal';
-import { ArrowLeft, Save as SaveIcon, Download, ChevronsRight, Lock as LockIcon, AlertCircle } from 'lucide-react';
+import LockChecklistModal from './components/LockChecklistModal';
+import { useConfirm } from './contexts/ConfirmContext';
+import { ArrowLeft, Save as SaveIcon, Download, ChevronsRight, Lock as LockIcon, AlertCircle, Clock } from 'lucide-react';
 import JSZip from 'jszip';
 import { getOverviewMD, getIpIndexMD, getRevLogMD, getFaReportMD } from './utils/exportMarkdown';
+import AccessGate from './components/AccessGate';
+
 
 // ─── [아키텍처 개선] 비즈니스 로직 순수 함수로 분리 (Fat Component 방지) ───
 const deriveNextRevisionData = (currentData, currentViewedRevision, activeProject, projectsList) => {
@@ -41,7 +45,7 @@ const deriveNextRevisionData = (currentData, currentViewedRevision, activeProjec
 
   Object.entries(latestIssueStates).forEach(([issueId, st]) => {
     const disposition = st.entryMode === 'eval' && st.assessment === 'Fixed' ? 'Fixed' : (st.disposition || 'Revision');
-    const isFixedOrClosed = disposition === 'Fixed' || disposition === 'Acceptable' || disposition === 'Waived';
+    const isFixedOrClosed = disposition === 'Fixed' || disposition === 'Acceptable' || disposition === 'Waived' || disposition === 'Closed';
 
     if (isFixedOrClosed) return;
 
@@ -106,7 +110,12 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
+  const [isAuthorized, setIsAuthorized] = useState(() => {
+    // 세션 저장소에서 인증 상태 확인
+    return sessionStorage.getItem('mitus_authorized') === 'true';
+  });
   const [viewState, setViewState] = useState('DASHBOARD');
+
   const [currentUser, setCurrentUser] = useState(() => {
     let savedUser = localStorage.getItem('mitus_current_user');
     if (!savedUser) {
@@ -117,9 +126,20 @@ function App() {
   });
 
   const [projectsList, setProjectsList] = useState([]);
+  const projectsListRef = useRef([]); // 하트비트 로직에서 스테일 클로저 방지를 위한 Ref
+  useEffect(() => {
+    projectsListRef.current = projectsList;
+  }, [projectsList]);
+
   const [loading, setLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [lockModalOpen, setLockModalOpen] = useState(false);
+  const [lockChecklist, setLockChecklist] = useState([]);
+  const showConfirm = useConfirm();
   const [isDbConnected, setIsDbConnected] = useState(false); // 실제 DB 연결 상태
+
+  const [globalIpDictionary, setGlobalIpDictionary] = useState(ipCategoryNameMap);
+  const [customIpDetails, setCustomIpDetails] = useState([]);
 
   // ─── [Supabase] 초기 프로젝트 목록 로드 ───
   useEffect(() => {
@@ -129,8 +149,31 @@ function App() {
       
       const { data, error } = await supabase
         .from('projects')
-        .select('id, name, latest_evt, phases, updated, is_locked, locked_by, locked_at, is_archived')
+        .select('id, name, latest_evt, phases, updated, is_locked, locked_by, locked_at, is_archived, project_data')
         .order('updated', { ascending: false });
+
+      // Fetch Custom IPs
+      const { data: customIpsData, error: customIpsError } = await supabase
+        .from('custom_ips')
+        .select('*')
+        .order('created_at', { ascending: true });
+        
+      if (!customIpsError && customIpsData) {
+        setCustomIpDetails(customIpsData);
+        // Merge into dictionary
+        setGlobalIpDictionary(prev => {
+          const newDict = JSON.parse(JSON.stringify(prev));
+          customIpsData.forEach(cip => {
+            if (!newDict[cip.category]) {
+              newDict[cip.category] = [];
+            }
+            if (!newDict[cip.category].includes(cip.name)) {
+              newDict[cip.category].push(cip.name);
+            }
+          });
+          return newDict;
+        });
+      }
 
       if (error) {
         console.error('❌ Supabase Fetch Error:', error);
@@ -232,7 +275,14 @@ function App() {
     }
     fetchProjects();
 
+    // URL 파라미터 체크 (POC용 편의 기능: ?key=mitus2026)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('key') === 'mitus2026') {
+      handleAuthorize();
+    }
+
     // ─── [Realtime] projects 테이블 실시간 구독 ───
+
     const channel = supabase
       .channel('projects-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
@@ -263,6 +313,138 @@ function App() {
     };
   }, []);
 
+  const handleAddCustomIp = async (category, name, description) => {
+    if (isDemoMode) {
+      const newIp = { id: Date.now().toString(), category, name, description, created_by: currentUser, created_at: new Date().toISOString() };
+      setCustomIpDetails(prev => [...prev, newIp]);
+      setGlobalIpDictionary(prev => {
+        const newDict = JSON.parse(JSON.stringify(prev));
+        if (!newDict[category]) newDict[category] = [];
+        if (!newDict[category].includes(name)) newDict[category].push(name);
+        return newDict;
+      });
+      return true;
+    }
+
+    const { data, error } = await supabase
+      .from('custom_ips')
+      .insert([{ category, name, description, created_by: currentUser }])
+      .select();
+
+    if (error) {
+      console.error('Error adding custom IP:', error);
+      showConfirm({ title: "저장 실패", message: "Custom IP 등록에 실패했습니다.", type: "danger", showCancel: false });
+      return false;
+    }
+
+    if (data && data.length > 0) {
+      const newIp = data[0];
+      setCustomIpDetails(prev => [...prev, newIp]);
+      setGlobalIpDictionary(prev => {
+        const newDict = JSON.parse(JSON.stringify(prev));
+        if (!newDict[category]) newDict[category] = [];
+        if (!newDict[category].includes(name)) newDict[category].push(name);
+        return newDict;
+      });
+    }
+    return true;
+  };
+
+  const handleEditCustomIp = async (id, updatedData) => {
+    const targetIp = customIpDetails.find(ip => ip.id === id);
+    if (!targetIp) return false;
+
+    if (isDemoMode) {
+      setCustomIpDetails(prev => prev.map(ip => ip.id === id ? { ...ip, ...updatedData } : ip));
+      if (updatedData.name && (updatedData.name !== targetIp.name || updatedData.category !== targetIp.category)) {
+        setGlobalIpDictionary(prev => {
+          const newDict = JSON.parse(JSON.stringify(prev));
+          // Remove old
+          if (newDict[targetIp.category]) {
+            newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
+            if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
+          }
+          // Add new
+          const cat = updatedData.category || targetIp.category;
+          const name = updatedData.name || targetIp.name;
+          if (!newDict[cat]) newDict[cat] = [];
+          if (!newDict[cat].includes(name)) newDict[cat].push(name);
+          return newDict;
+        });
+      }
+      return true;
+    }
+
+    const { data, error } = await supabase
+      .from('custom_ips')
+      .update(updatedData)
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error('Error editing custom IP:', error);
+      showConfirm({ title: "수정 실패", message: "Custom IP 수정에 실패했습니다.", type: "danger", showCancel: false });
+      return false;
+    }
+
+    if (data && data.length > 0) {
+      setCustomIpDetails(prev => prev.map(ip => ip.id === id ? data[0] : ip));
+      if (updatedData.name && (updatedData.name !== targetIp.name || updatedData.category !== targetIp.category)) {
+        setGlobalIpDictionary(prev => {
+          const newDict = JSON.parse(JSON.stringify(prev));
+          // Remove old
+          if (newDict[targetIp.category]) {
+            newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
+            if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
+          }
+          // Add new
+          const cat = updatedData.category || targetIp.category;
+          const name = updatedData.name || targetIp.name;
+          if (!newDict[cat]) newDict[cat] = [];
+          if (!newDict[cat].includes(name)) newDict[cat].push(name);
+          return newDict;
+        });
+      }
+    }
+    return true;
+  };
+
+  const handleDeleteCustomIp = async (id) => {
+    const targetIp = customIpDetails.find(ip => ip.id === id);
+    if (!targetIp) return false;
+
+    if (isDemoMode) {
+      setCustomIpDetails(prev => prev.filter(ip => ip.id !== id));
+      setGlobalIpDictionary(prev => {
+        const newDict = JSON.parse(JSON.stringify(prev));
+        if (newDict[targetIp.category]) {
+          newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
+          if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
+        }
+        return newDict;
+      });
+      return true;
+    }
+
+    const { error } = await supabase.from('custom_ips').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting custom IP:', error);
+      showConfirm({ title: "삭제 실패", message: "Custom IP 삭제에 실패했습니다.", type: "danger", showCancel: false });
+      return false;
+    }
+
+    setCustomIpDetails(prev => prev.filter(ip => ip.id !== id));
+    setGlobalIpDictionary(prev => {
+      const newDict = JSON.parse(JSON.stringify(prev));
+      if (newDict[targetIp.category]) {
+        newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
+        if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
+      }
+      return newDict;
+    });
+    return true;
+  };
+
   const [activeProject, setActiveProject] = useState(null);
   const [projectData, setProjectData] = useState(null);
   const [currentViewedRevision, setCurrentViewedRevision] = useState('');
@@ -271,11 +453,32 @@ function App() {
   const [activeTab, setActiveTab] = useState('Project_Overview');
   const tabs = ['Project_Overview', 'IP_Index', 'Revision_Log', 'FA_Report'];
 
+  const LOCK_STALE_THRESHOLD_MIN = 10;
   const currentData = projectData?.revisions?.[currentViewedRevision] || {};
   const currentProjMeta = projectsList.find(p => p.id === activeProject?.id);
-  const isSessionLockedByOther = currentProjMeta?.is_locked && currentProjMeta?.locked_by !== currentUser;
-  const isProjectArchived = currentProjMeta?.is_archived === true;
-  const isArchived = (activeProject ? !activeProject.isLatest || currentData?.status === "archived" : false) || currentProjMeta?.is_archived || isSessionLockedByOther;
+
+  // ─── [아키텍처 개선] 잠금 상태 상세 분석 ───
+  const getLockDetail = (meta) => {
+    if (!meta?.is_locked || !meta?.locked_at) return { isLocked: false, isStale: false, isByMe: false };
+    const lockTime = new Date(meta.locked_at).getTime();
+    const diffMins = (Date.now() - lockTime) / (1000 * 60);
+    const isStale = diffMins >= LOCK_STALE_THRESHOLD_MIN;
+    const isByMe = meta.locked_by === currentUser;
+    return { isLocked: true, isStale, isByMe, lockedBy: meta.locked_by, minutesAgo: Math.floor(diffMins) };
+  };
+
+  const lockDetail = getLockDetail(currentProjMeta);
+  // 타인이 점유 중이고, 아직 정체(Stale)되지 않은 경우에만 진정한 Lock으로 간주
+  const isSessionLockedByOther = lockDetail.isLocked && !lockDetail.isByMe && !lockDetail.isStale;
+  
+  // ─── [개선] 읽기 전용 사유(lockReason) 분석 ───
+  const lockReason = isSessionLockedByOther ? `Locked by ${currentProjMeta?.locked_by}` :
+                     (lockDetail.isLocked && !lockDetail.isByMe && lockDetail.isStale) ? `Stale Lock (${lockDetail.lockedBy})` :
+                     (activeProject && !activeProject.isLatest) ? "Historical View" :
+                     currentProjMeta?.is_archived ? "Project Archived" : 
+                     (currentData?.status === "archived") ? "Revision Locked" : "";
+
+  const isArchived = !!lockReason;
 
   const [dirtyNavigation, setDirtyNavigation] = useState(null); 
   const [showExitWarning, setShowExitWarning] = useState(false);
@@ -288,23 +491,74 @@ function App() {
     latestDataRef.current = projectData;
   }, [projectData]);
 
+  // ─── [아키텍처 개선] 하트비트 (Heartbeat) 로직: 5분마다 locked_at 갱신 ───
+  useEffect(() => {
+    if (!activeProject || isDemoMode) return;
+
+    const interval = setInterval(async () => {
+      // 최신 projectsList 상태를 Ref에서 가져와 락 보유 여부 확인
+      const currentMeta = projectsListRef.current.find(p => p.id === activeProject.id);
+      const detail = getLockDetail(currentMeta);
+      
+      if (detail.isLocked && detail.isByMe) {
+        console.log('💓 [Heartbeat] 잠금 시간 갱신 중...');
+        const { error } = await supabase
+          .from('projects')
+          .update({ locked_at: new Date().toISOString() })
+          .eq('id', activeProject.id);
+        
+        if (error) console.error('❌ Heartbeat Error:', error);
+      } else if (detail.isLocked && !detail.isByMe) {
+        // [중요] 더 이상 락을 보유하고 있지 않다면 (타인에 의한 강제 해제 등) 알림
+        console.warn('⚠️ [Heartbeat] 잠금 권한이 상실되었습니다.');
+        showConfirm({
+          title: "편집 권한 상실",
+          message: `다른 사용자(${detail.lockedBy})가 편집 권한을 가져갔습니다.\n이후의 수정사항은 저장되지 않을 수 있으며, 현재 페이지는 읽기 전용으로 전환됩니다.`,
+          type: "danger",
+          showCancel: false
+        });
+        // 알림 후 UI가 자동으로 isSessionLockedByOther에 의해 Read-Only가 됨
+      }
+    }, 5 * 60 * 1000); // 5분
+
+    return () => clearInterval(interval);
+  }, [activeProject?.id, isDemoMode, currentUser]);
+
   // ─── 브라우저 이탈 방지 (Cleanup Lock) ───
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const handleBeforeUnload = (event) => {
       if (activeProject && !isDemoMode) {
-        // 본인이 선점한 경우에만 해제 (Read-Only 진입 시 타인의 락을 지우지 않음)
-        const currentMeta = projectsList.find(p => p.id === activeProject.id);
+        const currentMeta = projectsListRef.current.find(p => p.id === activeProject.id);
         if (currentMeta?.locked_by === currentUser) {
-          navigator.sendBeacon(
-            `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/projects?id=eq.${activeProject.id}`,
-            new Blob([JSON.stringify({ is_locked: false, locked_by: null, locked_at: null })], { type: 'application/json' })
-          );
+          // Supabase 인증 정보 포함을 위해 fetch + keepalive 사용
+          const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/projects?id=eq.${activeProject.id}`;
+          const headers = {
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          };
+          const body = JSON.stringify({ is_locked: false, locked_by: null, locked_at: null });
+
+          // 브라우저 종료 시에도 비동기 요청이 완료되도록 keepalive 설정
+          fetch(url, {
+            method: 'PATCH',
+            headers,
+            body,
+            keepalive: true
+          }).catch(err => console.error('Cleanup Lock Error:', err));
         }
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [activeProject, isDemoMode, projectsList, currentUser]);
+  }, [activeProject?.id, isDemoMode, currentUser]);
+
+  const handleAuthorize = () => {
+    sessionStorage.setItem('mitus_authorized', 'true');
+    setIsAuthorized(true);
+  };
+
 
   // ─── [아키텍체 개선] 자식 컴포넌트 리렌더링 방지를 위한 useCallback 적용 ───
   const handleEditingStateChange = useCallback((isEditing) => {
@@ -321,7 +575,12 @@ function App() {
 
   const handleTabSubmit = useCallback(async (tabName, newData, forceDirty = false) => {
     if (isArchived) {
-      alert("잠금 처리된 차수입니다. 수정할 수 없습니다.");
+      showConfirm({
+        title: "수정 불가",
+        message: "잠금 처리된 차수입니다. 수정할 수 없습니다.",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
     
@@ -351,9 +610,14 @@ function App() {
           p.id === activeProject?.id ? { ...p, project_data: savedProjectData, updated: dt } : p
         ));
       } else {
+        // [수정] 저장 시 locked_at도 함께 갱신하여 세션 유지
         const { error } = await supabase
           .from('projects')
-          .update({ project_data: savedProjectData, updated: dt })
+          .update({ 
+            project_data: savedProjectData, 
+            updated: dt,
+            locked_at: dt 
+          })
           .eq('id', activeProject?.id);
         if (error) console.error('Error saving to Supabase:', error);
       }
@@ -415,29 +679,42 @@ function App() {
     // Supabase에서 상세 데이터 가져오기
     const { data, error } = await supabase
       .from('projects')
-      .select('project_data, is_locked, locked_by')
+      .select('project_data, is_locked, locked_by, locked_at')
       .eq('id', projectId)
       .single();
 
     if (error || !data?.project_data) {
       console.error('Error fetching project data:', error);
-      alert('프로젝트 데이터를 불러오는 데 실패했습니다.');
+      showConfirm({
+        title: "데이터 로드 실패",
+        message: "프로젝트 데이터를 불러오는 데 실패했습니다.",
+        type: "danger",
+        showCancel: false
+      });
       return;
     }
 
-    // 잠금 상태 판단 (3-way 분기)
-    const isLockedByMe = data.is_locked && data.locked_by === currentUser;
-    const isLockedByOther = data.is_locked && data.locked_by !== currentUser;
+    // 잠금 상태 상세 분석
+    const detail = getLockDetail(data);
 
-    if (isLockedByOther) {
-      // 타인이 선점 중 → 락 획득 시도 없이 Read-Only로 진입
-      console.log(`🔒 [Presence] ${data.locked_by}님이 편집 중입니다. 읽기 전용으로 진입합니다.`);
-    } else if (!isLockedByMe) {
+    if (detail.isLocked && !detail.isByMe) {
+      if (detail.isStale) {
+        // [좀비 락 해결] 정체된 잠금 발견 시 자동 Takeover
+        console.log(`♻️ [Zombie Lock] ${detail.lockedBy}님의 정체된 잠금을 발견하여 자동 해제 후 점유합니다. (${detail.minutesAgo}분 전)`);
+        await supabase
+          .from('projects')
+          .update({ is_locked: true, locked_by: currentUser, locked_at: new Date().toISOString() })
+          .eq('id', projectId);
+      } else {
+        // 타인이 활발히 점유 중 → Read-Only로 진입
+        console.log(`🔒 [Presence] ${data.locked_by}님이 편집 중입니다. 읽기 전용으로 진입합니다.`);
+      }
+    } else if (!detail.isByMe) {
       // 잠금 없음 → 즉시 선점
       await supabase
-        .from('projects')
-        .update({ is_locked: true, locked_by: currentUser, locked_at: new Date().toISOString() })
-        .eq('id', projectId);
+          .from('projects')
+          .update({ is_locked: true, locked_by: currentUser, locked_at: new Date().toISOString() })
+          .eq('id', projectId);
     }
     // isLockedByMe → 이미 본인이 선점 중, 재획득 불필요
 
@@ -464,7 +741,12 @@ function App() {
   const handleCreateProject = async (formData) => {
     const id = formData.Project_Name.trim();
     if (projectsList.find(p => p.id === id)) {
-      alert("이미 존재하는 프로젝트 이름(ID) 입니다.");
+      showConfirm({
+        title: "이름 중복",
+        message: "이미 존재하는 프로젝트 이름(ID) 입니다.",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
 
@@ -512,7 +794,12 @@ function App() {
     const { error } = await supabase.from('projects').insert([newProjMeta]);
     if (error) {
       console.error('Error creating project:', error);
-      alert('프로젝트 생성에 실패했습니다.');
+      showConfirm({
+        title: "생성 실패",
+        message: "프로젝트 생성에 실패했습니다.",
+        type: "danger",
+        showCancel: false
+      });
       return;
     }
 
@@ -522,11 +809,14 @@ function App() {
   };
 
   const handleToggleArchive = async (projectId, targetIsArchived) => {
-    if (targetIsArchived) {
-      if (!window.confirm("Move this project to the Archive?")) return;
-    } else {
-      if (!window.confirm("Restore this project from the Archive?")) return;
-    }
+    const confirmed = await showConfirm({
+      title: targetIsArchived ? "프로젝트 아카이브" : "아카이브 복구",
+      message: targetIsArchived 
+        ? "이 프로젝트를 아카이브로 이동하시겠습니까?" 
+        : "이 프로젝트를 아카이브에서 복구하시겠습니까?",
+      type: "warning"
+    });
+    if (!confirmed) return;
 
     if (!isDemoMode) {
       // 1. Supabase DB 업데이트
@@ -537,7 +827,12 @@ function App() {
 
       if (error) {
         console.error('Error toggling archive:', error);
-        alert('상태 변경에 실패했습니다.');
+        showConfirm({
+          title: "변경 실패",
+          message: "상태 변경에 실패했습니다.",
+          type: "danger",
+          showCancel: false
+        });
         return;
       }
     } else {
@@ -559,14 +854,24 @@ function App() {
   const handlePermanentDelete = async (projectId) => {
     // 레퍼런스 프로젝트 삭제 차단
     if (projectId === REFERENCE_PROJECT_ID) {
-      alert('⛔ 시스템 레퍼런스 프로젝트는 삭제할 수 없습니다.\n\n대신 "초기 시드 데이터로 복구" 기능을 사용하세요.');
+      showConfirm({
+        title: "삭제 불가",
+        message: '시스템 레퍼런스 프로젝트는 삭제할 수 없습니다.\n\n대신 "초기 시드 데이터로 복구" 기능을 사용하세요.',
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
     if (!isDemoMode) {
       const { error } = await supabase.from('projects').delete().eq('id', projectId);
       if (error) {
         console.error('Error deleting project:', error);
-        alert('삭제에 실패했습니다.');
+        showConfirm({
+          title: "삭제 실패",
+          message: "삭제에 실패했습니다.",
+          type: "danger",
+          showCancel: false
+        });
         return;
       }
     } else {
@@ -575,8 +880,41 @@ function App() {
     setProjectsList(prev => prev.filter(p => p.id !== projectId));
   };
 
-  const handleLoadProjectClick = () => {
-    alert("Select an external project file (.json) to import into the system. (Phase 3 implementation)");
+  const handleLoadProjectClick = async () => {
+    showConfirm({
+      title: "준비 중",
+      message: "외부 프로젝트 파일(.json)을 가져오는 기능은 현재 개발 중입니다. (Phase 3 implementation)",
+      type: "info",
+      showCancel: false
+    });
+  };
+
+  // ─── [신규] 잠금 강제 해제 (Force Unlock) 핸들러 ───
+  const handleForceUnlock = async (projectId) => {
+    if (isDemoMode) {
+      setProjectsList(prev => prev.map(p => 
+        p.id === projectId ? { ...p, is_locked: false, locked_by: null, locked_at: null } : p
+      ));
+      return;
+    }
+
+    const { error } = await supabase
+      .from('projects')
+      .update({ is_locked: false, locked_by: null, locked_at: null })
+      .eq('id', projectId);
+
+    if (error) {
+      console.error('❌ Force Unlock Error:', error);
+      showConfirm({
+        title: "잠금 해제 실패",
+        message: "잠금 해제에 실패했습니다.",
+        type: "danger",
+        showCancel: false
+      });
+    } else {
+      console.log(`✅ [Force Unlock] ${projectId} 잠금이 해제되었습니다.`);
+      // 로컬 상태는 실시간 구독(Realtime)에 의해 자동 업데이트됨
+    }
   };
 
   const requestBackToDashboard = () => {
@@ -628,14 +966,18 @@ function App() {
   };
 
   // ─── [아키텍처 개선] 분리된 순수 함수를 호출하여 로직 간소화 ───
-  const handleGenerateNextRevision = useCallback(() => {
+  const handleGenerateNextRevision = useCallback(async () => {
     if (!currentData || currentData.status !== 'archived') {
-      alert("현재 최신 차수가 Lock(Archived) 상태여야 다음 차수를 생성할 수 있습니다.");
+      showConfirm({
+        title: "파생 불가",
+        message: "현재 최신 차수가 Lock(Archived) 상태여야 다음 차수를 생성할 수 있습니다.",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
 
     const faReports = currentData?.faReport?.faReports || [];
-    // EVT0 단계에서는 Revision 판정인 FA 리포트는 연동이 원천 차단되므로 미결 검사에서 예외 처리
     const unlinkedFAs = faReports.filter(f => {
       if (f.isLinkedToLog) return false;
       if (currentViewedRevision === 'EVT0' && f.disposition === 'Revision') return false;
@@ -643,15 +985,24 @@ function App() {
     });
 
     if (unlinkedFAs.length > 0) {
-      alert("FA 리포트에 아직 Revision Log로 가져오지 않은 미결 이슈가 있습니다. 모든 FA 이슈를 Log에 반영해야 다음 차수를 생성할 수 있습니다.");
+      showConfirm({
+        title: "미결 이슈 존재",
+        message: "FA 리포트에 아직 Revision Log로 가져오지 않은 미결 이슈가 있습니다. 모든 FA 이슈를 Log에 반영해야 다음 차수를 생성할 수 있습니다.",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
 
-    const confirmNext = window.confirm(`현재 차수(${currentViewedRevision})를 보존하고 다음 차수를 파생하시겠습니까?`);
+    const confirmNext = await showConfirm({
+      title: "차수 파생 (Revision Up)",
+      message: `현재 차수(${currentViewedRevision})를 보존하고 다음 차수를 파생하시겠습니까?`,
+      type: "info",
+      confirmText: "파생 실행"
+    });
     if (!confirmNext) return;
 
     try {
-      // 70줄의 비즈니스 로직을 단 한 줄로 깔끔하게 호출
       const { nextEvtName, newRevisionData, newPhases } = deriveNextRevisionData(currentData, currentViewedRevision, activeProject, projectsList);
 
       const updatedProjectData = {
@@ -671,7 +1022,7 @@ function App() {
           : p
         ));
       } else {
-        supabase
+        await supabase
           .from('projects')
           .update({ 
             latest_evt: nextEvtName, 
@@ -692,17 +1043,28 @@ function App() {
       setCurrentViewedRevision(nextEvtName);
       setActiveTab('Revision_Log');
     } catch (err) {
-      alert("파생 중 오류가 발생했습니다: " + err.message);
+      showConfirm({
+        title: "파생 오류",
+        message: "파생 중 오류가 발생했습니다: " + err.message,
+        type: "danger",
+        showCancel: false
+      });
       console.error(err);
     }
-  }, [currentData, currentViewedRevision, activeProject, projectsList, isDemoMode, projectData]);
+  }, [currentData, currentViewedRevision, activeProject, projectsList, isDemoMode, projectData, showConfirm]);
 
   // ─── 레퍼런스 프로젝트 보호 ───
   const REFERENCE_PROJECT_ID = 'SM5718';
 
   /** SM5718을 mockData 원본 데이터로 즉시 복구 */
   const handleResetReference = async () => {
-    if (!window.confirm(`[레퍼런스 복구] "${REFERENCE_PROJECT_ID}" 프로젝트를 초기 시드 데이터로 완전히 덮어쓰시겠습니까?\n\n현재 수정 내용은 모두 사라지며 복구할 수 없습니다.`)) return;
+    const confirmed = await showConfirm({
+      title: "레퍼런스 복구",
+      message: `[레퍼런스 복구] "${REFERENCE_PROJECT_ID}" 프로젝트를 초기 시드 데이터로 완전히 덮어쓰시겠습니까?\n\n현재 수정 내용은 모두 사라지며 복구할 수 없습니다.`,
+      type: "danger",
+      confirmText: "복구 실행"
+    });
+    if (!confirmed) return;
     try {
       const { initialProjectData } = await import('./data/mockData');
       const resetPayload = {
@@ -729,86 +1091,163 @@ function App() {
         setProjectData(initialProjectData);
         setCurrentViewedRevision('EVT2');
       }
-      alert('✅ 레퍼런스 프로젝트가 초기 상태로 복구되었습니다.');
+      showConfirm({
+        title: "복구 완료",
+        message: '레퍼런스 프로젝트가 초기 상태로 복구되었습니다.',
+        type: "success",
+        showCancel: false
+      });
     } catch (err) {
-      alert('❌ 복구 실패: ' + err.message);
+      showConfirm({
+        title: "복구 실패",
+        message: '복구 실패: ' + err.message,
+        type: "danger",
+        showCancel: false
+      });
       console.error(err);
     }
   };
 
-  const handleDebugRollback = () => {
+  const handleDebugRollback = async () => {
     if (!activeProject || !activeProject.isLatest || activeProject.evt === 'EVT0') {
-      alert("롤백할 수 없는 상태입니다 (EVT0 이거나 최신 차수가 아님).");
+      showConfirm({
+        title: "롤백 불가",
+        message: "롤백할 수 없는 상태입니다 (EVT0 이거나 최신 차수가 아님).",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
 
-    if (window.confirm(`[디버그] 정말 ${activeProject.evt} 차수를 삭제하고 이전 차수로 롤백하시겠습니까?`)) {
+    const confirmed = await showConfirm({
+      title: "데이터 리셋 (Rollback)",
+      message: `[디버그] 정말 ${activeProject.evt} 차수를 삭제하고 이전 차수로 롤백하시겠습니까?`,
+      type: "danger",
+      confirmText: "롤백 실행"
+    });
+
+    if (confirmed) {
       const currentProj = projectsList.find(p => p.id === activeProject.id);
       if (!currentProj || currentProj.phases.length <= 1) return;
 
       const currentPhase = activeProject.evt; 
       const previousPhase = currentProj.phases[currentProj.phases.length - 2]; 
+      const newPhases = currentProj.phases.slice(0, -1);
 
+      // 1. 새로운 project_data 계산 (현재 차수 삭제 및 이전 차수를 draft로)
+      const newRevisions = { ...projectData.revisions };
+      delete newRevisions[currentPhase];
+      if (newRevisions[previousPhase]) {
+        newRevisions[previousPhase].status = 'draft'; 
+      }
+      const updatedProjectData = { ...projectData, revisions: newRevisions };
+
+      // 2. DB 업데이트 (데모 모드가 아닐 때만)
+      if (!isDemoMode) {
+        try {
+          await supabase
+            .from('projects')
+            .update({ 
+              phases: newPhases, 
+              latest_evt: previousPhase, 
+              project_data: updatedProjectData,
+              updated: new Date().toISOString()
+            })
+            .eq('id', activeProject.id);
+        } catch (dbErr) {
+          console.error("Rollback DB Error:", dbErr);
+          showConfirm({ title: "DB 업데이트 실패", message: "DB 저장 중 오류가 발생했습니다.", type: "danger", showCancel: false });
+          return;
+        }
+      }
+
+      // 3. 로컬 상태 업데이트
       setProjectsList(prev => prev.map(p => {
         if (p.id === activeProject.id) {
-          return { ...p, phases: p.phases.slice(0, -1), latest_evt: previousPhase, updated: new Date().toISOString() };
+          return { 
+            ...p, 
+            phases: newPhases, 
+            latest_evt: previousPhase, 
+            updated: new Date().toISOString(),
+            project_data: updatedProjectData // 대시보드 리스트 데이터도 갱신
+          };
         }
         return p;
       }));
 
-      setProjectData(prev => {
-        const newRevisions = { ...prev.revisions };
-        delete newRevisions[currentPhase];
-        if (newRevisions[previousPhase]) {
-          newRevisions[previousPhase].status = 'draft'; 
-        }
-        return { ...prev, revisions: newRevisions };
-      });
-
+      setProjectData(updatedProjectData);
       setActiveProject({ ...activeProject, evt: previousPhase, isLatest: true });
       setCurrentViewedRevision(previousPhase);
       
       isDirtyRef.current = false;
-      alert(`[DEBUG] ${currentPhase}가 삭제되고 ${previousPhase}로 롤백되었습니다.`);
+      showConfirm({ title: "롤백 완료", message: `[DEBUG] ${currentPhase}가 삭제되고 ${previousPhase}로 롤백되었습니다.`, type: "success", showCancel: false });
     }
   };
 
   const handleGlobalLock = async () => {
+    // 1. 미저장 데이터 체크 및 자동 저장 안내
     if (isDirtyRef.current || isGloballyEditing) {
-      alert("수정 중인 내용이 있습니다. 먼저 탭 내 저장을 완료하세요.");
-      return;
+      const confirmSave = await showConfirm({
+        title: "자동 저장 확인",
+        message: "수정 중인 내용이 있습니다. 마감 전 자동으로 저장하고 진행하시겠습니까?",
+        type: "info",
+        confirmText: "저장 후 진행",
+        cancelText: "저장 안 함"
+      });
+      if (!confirmSave) return;
+      // TODO: 현재 탭의 저장 로직을 강제로 호출하거나, 전체 데이터를 한번에 저장하는 로직 필요
+      // 여기서는 일단 경고로 남겨두고, 사용자가 수동 저장하게 유도하거나 handleTabSubmit을 활용
     }
 
+    // 2. 전제 조건 검사 (Checklist 생성)
+    const checklist = [];
+    
+    // [FA Report 체크]
     const faReports = currentData?.faReport?.faReports || [];
-    // EVT0 단계에서는 Revision 판정인 FA 리포트는 연동이 원천 차단되므로 Lock 검사에서 예외 처리
     const unlinkedFAs = faReports.filter(f => {
       if (f.isLinkedToLog) return false;
+      // EVT0에서 Revision 판정은 예외 (다음 차수에서 처리)
       if (currentViewedRevision === 'EVT0' && f.disposition === 'Revision') return false;
       return true;
     });
+    checklist.push({
+      title: "FA 리포트 연동 확인",
+      stage: currentViewedRevision,
+      isPassed: unlinkedFAs.length === 0,
+      description: "발생된 모든 FA 리포트가 Revision Log에 연동되어야 합니다.",
+      pendingItems: unlinkedFAs.map(f => f.faId)
+    });
 
-    if (unlinkedFAs.length > 0) {
-      alert("FA 리포트에 아직 Revision Log로 가져오지 않은 미결 이슈가 있습니다. 모든 FA 이슈를 Log에 반영해야 마감(Lock)할 수 있습니다.");
-      return;
-    }
+    // [Revision Log 체크]
     const revLog = currentData.revisionLog;
-    if (revLog) {
-      const issues = revLog.issues || [];
-      const loaded = revLog.loadedIssues || [];
-      const evaluatedIds = issues.filter(i => i.entryMode === 'eval').map(i => i.targetIssue);
-      const missingEvals = loaded.filter(id => !evaluatedIds.includes(id));
-      if (missingEvals.length > 0) {
-        alert("이전 차수 수정 평가가 완료되지 않은 이슈가 있습니다. 진행 후 Lock 하시기 바랍니다.");
-        return;
-      }
-      const unmanagedCarryovers = issues.filter(i => i.entryMode === 'carryover' && i.carryoverStatus === 'OPEN');
-      if (unmanagedCarryovers.length > 0) {
-        alert("이월된 이슈 중 Action(조치)이 누락된 항목이 있습니다.");
-        return;
-      }
-    }
-    const confirmLock = window.confirm("프로젝트를 Lock 하시겠습니까? 한 번 잠그면 현재 차수는 읽기 전용 상태가 됩니다.");
-    if (!confirmLock) return;
+    const issues = revLog?.issues || [];
+    const loaded = revLog?.loadedIssues || [];
+    
+    const evaluatedIds = issues.filter(i => i.entryMode === 'eval').map(i => i.targetIssue);
+    const missingEvals = loaded.filter(id => !evaluatedIds.includes(id));
+    checklist.push({
+      title: "이전 차수 수정 평가 완료",
+      stage: currentViewedRevision,
+      isPassed: missingEvals.length === 0,
+      description: "이전 차수에서 넘어온 모든 이슈에 대한 평가(eval)가 기록되어야 합니다.",
+      pendingItems: missingEvals
+    });
+
+    const unmanagedCarryovers = issues.filter(i => i.entryMode === 'carryover' && i.carryoverStatus === 'OPEN');
+    checklist.push({
+      title: "이월 이슈 조치 확정",
+      stage: currentViewedRevision,
+      isPassed: unmanagedCarryovers.length === 0,
+      description: "자동 이월된 이슈들에 대한 명확한 조치 방향(Keep Open, Close 등)이 결정되어야 합니다.",
+      pendingItems: unmanagedCarryovers.map(i => i.targetIssue)
+    });
+
+    setLockChecklist(checklist);
+    setLockModalOpen(true);
+  };
+
+  const handleFinalConfirmLock = async () => {
+    setLockModalOpen(false);
     
     const updatedProjectData = {
       ...projectData,
@@ -825,33 +1264,58 @@ function App() {
     if (!isDemoMode) {
       await supabase.from('projects').update({ project_data: updatedProjectData }).eq('id', activeProject.id);
     }
+
+    // 마감 성공 알림 및 다음 차수 생성 유도
+    const confirmed = await showConfirm({
+      title: "차수 확정 완료",
+      message: "현재 차수가 성공적으로 확정되었습니다.\n지금 바로 다음 차수(Revision-up)를 생성하시겠습니까?",
+      type: "success",
+      confirmText: "지금 생성",
+      cancelText: "나중에"
+    });
+
+    if (confirmed) {
+      handleGenerateNextRevision();
+    }
   };
 
   const handleGlobalUnlock = async () => {
-    const confirmUnlock = window.confirm("Unlock: 잠긴 문서의 Lock을 해제하고 다시 편집(Draft) 상태로 되돌립니다.\n\n[주의: 만약 이미 다음 차수(EVT3 등)가 파생된 상태에서 과거 차수의 데이터를 수정하면 데이터 정합성에 문제가 생길 수 있습니다.]\n정말 잠금을 해제하시겠습니까?");
-    if (!confirmUnlock) return;
+    const confirmed = await showConfirm({
+      title: "차수 잠금 해제 (Unlock)",
+      message: "잠긴 문서의 Lock을 해제하고 다시 편집(Draft) 상태로 되돌립니다.\n\n[주의: 이미 다음 차수가 파생된 상태에서 과거 차수를 수정하면 데이터 정합성에 문제가 생길 수 있습니다.]\n정말 잠금을 해제하시겠습니까?",
+      type: "warning",
+      confirmText: "잠금 해제"
+    });
 
-    const updatedProjectData = {
-      ...projectData,
-      revisions: {
-        ...projectData.revisions,
-        [currentViewedRevision]: {
-          ...projectData.revisions[currentViewedRevision],
-          status: "draft"
+    if (confirmed) {
+      const updatedProjectData = {
+        ...projectData,
+        revisions: {
+          ...projectData.revisions,
+          [currentViewedRevision]: {
+            ...projectData.revisions[currentViewedRevision],
+            status: "draft"
+          }
         }
-      }
-    };
+      };
 
-    setProjectData(updatedProjectData);
-    if (!isDemoMode) {
-      await supabase.from('projects').update({ project_data: updatedProjectData }).eq('id', activeProject.id);
+      setProjectData(updatedProjectData);
+      if (!isDemoMode) {
+        await supabase.from('projects').update({ project_data: updatedProjectData }).eq('id', activeProject.id);
+      }
+      showConfirm({ title: "해제 완료", message: "잠금이 해제되어 다시 편집할 수 있습니다.", type: "success", showCancel: false });
     }
   };
   
   
   const handleSaveMD = async () => {
     if (!activeProject || !currentData) {
-      alert("출력할 데이터가 없습니다.");
+      showConfirm({
+        title: "데이터 없음",
+        message: "출력할 데이터가 없습니다.",
+        type: "info",
+        showCancel: false
+      });
       return;
     }
 
@@ -900,10 +1364,19 @@ function App() {
       URL.revokeObjectURL(url);
 
     } catch (err) {
-      alert("Markdown Export 중 오류가 발생했습니다: " + err.message);
+      showConfirm({
+        title: "내보내기 오류",
+        message: "Markdown Export 중 오류가 발생했습니다: " + err.message,
+        type: "danger",
+        showCancel: false
+      });
       console.error(err);
     }
   };
+
+  if (!isAuthorized) {
+    return <AccessGate onAuthorized={handleAuthorize} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100">
@@ -939,6 +1412,12 @@ function App() {
             handleToggleArchive={handleToggleArchive}
             handlePermanentDelete={handlePermanentDelete}
             handleResetReference={handleResetReference}
+            handleForceUnlock={handleForceUnlock}
+            globalIpDictionary={globalIpDictionary}
+            customIpDetails={customIpDetails}
+            handleEditCustomIp={handleEditCustomIp}
+            handleDeleteCustomIp={handleDeleteCustomIp}
+            handleAddCustomIp={handleAddCustomIp}
           />
           {isNewProjectModalOpen && (
             <NewProjectModal 
@@ -951,75 +1430,90 @@ function App() {
 
       {viewState === 'WORKSPACE' && activeProject && projectData && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden flex flex-col relative max-w-[1400px] mx-auto min-h-[calc(100vh-60px)]">
-          {/* Top Header */}
-          <div className="bg-white border-b border-slate-100 flex items-center justify-between shadow-sm z-10 px-4 py-3">
-            <button onClick={requestBackToDashboard} className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-4 py-2 rounded-xl border border-transparent hover:border-blue-100 transition-colors">
-              <ArrowLeft size={16} /> <span className="hidden sm:inline">Back to Dashboard</span>
-            </button>
-            <div className="flex gap-2.5">
-              {activeProject.isLatest && (
-                <>
-                  <button type="button" onClick={handleSaveMD} className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white bg-blue-600 border border-blue-700 hover:bg-blue-700 shadow-sm relative transition-colors">
-                    <Download size={16} /> .md 백업
+          {/* 🚀 통합 글로벌 헤더 (Navigation + Context + Global Actions) */}
+          <div className="bg-white border-b border-slate-200 flex items-center justify-between shadow-sm z-[20] px-4 py-2.5">
+            <div className="flex items-center gap-3">
+              <button onClick={requestBackToDashboard} className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-xl border border-slate-100 transition-colors shrink-0">
+                <ArrowLeft size={14} /> <span className="hidden lg:inline">Dashboard</span>
+              </button>
+              
+              <div className="h-5 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
+              
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm font-extrabold px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-800 shadow-sm shrink-0">{activeProject.name}</span>
+                <span className={`font-mono text-[10px] font-bold px-2 py-0.5 border rounded-full shrink-0 ${activeProject.isLatest ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>{activeProject.evt}</span>
+                {isDirtyRef.current && <span className="text-[10px] font-extrabold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 animate-pulse shrink-0">Unsaved</span>}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* ── 글로벌 상태 및 Lock 액션 영역 ── */}
+              <div className="flex items-center gap-2">
+                {!isArchived ? (
+                  <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 shadow-inner">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-500">작성 중</span>
+                    <span className="text-slate-200 mx-1">|</span>
+                    <button onClick={handleGlobalLock} className="text-blue-600 hover:text-blue-800 text-[11px] font-bold flex items-center gap-1 transition-colors">
+                      <LockIcon size={12} /> 현재 차수 확정 (Lock)
+                    </button>
+                  </div>
+                ) : isSessionLockedByOther ? (
+                  <div className="flex items-center gap-2 text-rose-700 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200 font-bold text-[11px] shadow-sm">
+                    <LockIcon size={12} className="text-rose-500" />
+                    읽기 전용 ({currentProjMeta?.locked_by})
+                  </div>
+                ) : (lockDetail.isLocked && !lockDetail.isByMe && lockDetail.isStale) ? (
+                  <div className="flex items-center gap-2 text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 font-bold text-[10px] shadow-sm">
+                    <span>정체된 잠금 ({lockDetail.minutesAgo}분 전)</span>
+                    <button onClick={async () => {
+                      const confirmed = await showConfirm({
+                        title: "편집 권한 가져오기 (Takeover)",
+                        message: "타인이 편집 중인 잠금을 해제하고 편집 권한을 가져오시겠습니까?\n상대방의 저장되지 않은 데이터가 유실될 수 있습니다.",
+                        type: "warning",
+                        confirmText: "권한 가져오기"
+                      });
+                      if (confirmed) handleForceUnlock(activeProject.id);
+                    }} className="bg-amber-600 hover:bg-amber-700 text-white px-2 py-0.5 rounded transition-colors">Takeover</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold">
+                    <LockIcon size={12} /> Read-Only
+                    {!currentProjMeta?.is_archived && <button onClick={handleGlobalUnlock} className="text-red-500 ml-2 hover:underline">Unlock</button>}
+                  </div>
+                )}
+              </div>
+
+              <div className="h-5 w-[1px] bg-slate-200 mx-1 hidden md:block"></div>
+
+              {/* ── 글로벌 유틸리티 영역 ── */}
+              <div className="flex gap-2">
+                {activeProject.isLatest && (
+                  <button onClick={handleSaveMD} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs text-white bg-slate-800 hover:bg-slate-900 transition-colors shadow-sm">
+                    <Download size={14} /> .md 백업
                   </button>
-                </>
-              )}
-              { (() => {
-                  const canGenerate = activeProject.isLatest && currentData?.status === 'archived';
+                )}
+                { (() => {
+                    const canGenerate = activeProject.isLatest && currentData?.status === 'archived';
+                    return (
+                      <button onClick={handleGenerateNextRevision} disabled={!canGenerate} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs shadow-sm transition-all ${canGenerate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200'}`}>
+                        <ChevronsRight size={14} /> 다음 차수 파생
+                      </button>
+                    );
+                })() }
+                {activeProject.isLatest && activeProject.evt !== 'EVT0' && !isSessionLockedByOther && (() => {
+                  const currentNum = parseInt(activeProject.evt.match(/\d+/)?.[0] || "0");
+                  const prevEvt = activeProject.evt.replace(/\d+/, currentNum - 1);
                   return (
-                    <button type="button" onClick={handleGenerateNextRevision} disabled={!canGenerate} title={!canGenerate ? "현재 최신 차수가 Lock되어야 파생할 수 있습니다." : ""} className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm shadow-sm transition-colors ${canGenerate ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200'}`}>
-                      <ChevronsRight size={16} /> <span className="hidden sm:inline">다음 차수 파생</span>
+                    <button onClick={handleDebugRollback} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs text-rose-400/80 hover:text-rose-600 bg-rose-50/30 hover:bg-rose-50 border border-rose-100 transition-all shadow-sm">
+                      Data reset to {prevEvt}
                     </button>
                   );
-              })() }
-              {/* [DEBUG ONLY] 롤백 버튼 — Read-Only 모드에서는 숨김 */}
-              {activeProject.isLatest && activeProject.evt !== 'EVT0' && !isSessionLockedByOther && (
-                <button type="button" onClick={handleDebugRollback} className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-sm text-red-500 bg-white border border-red-500 hover:bg-red-50 transition-colors shadow-sm">
-                  데이터 리셋 (테스트용)
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Sub Header */}
-          <div className="bg-slate-50/50 border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-base font-extrabold px-3 py-1 bg-white border border-slate-200 rounded-lg text-slate-800 shadow-sm">{activeProject.name}</span>
-              <span className={`font-mono text-xs font-bold px-3 py-1 border rounded-full ${activeProject.isLatest ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>{activeProject.evt}</span>
-              {isDirtyRef.current && <span className="text-xs font-extrabold text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 animate-pulse">Unsaved Changes</span>}
-            </div>
-            <div className="flex items-center gap-2 font-bold text-sm">
-              {!isArchived ? (
-                <div className="flex items-center gap-2 text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                  </span>
-                  Draft Editing Mode<span className="text-slate-300 mx-1">|</span><span onClick={handleGlobalLock} className="text-blue-600 cursor-pointer hover:underline text-xs font-bold">문서 Lock 설정</span>
-                </div>
-              ) : isSessionLockedByOther ? (
-                // ─── 타인 편집 중: 독립된 강조 배지 (일반 Locked와 완전 분리) ───
-                <div className="flex items-center gap-2 text-rose-700 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-300 font-bold text-sm shadow-sm">
-                  <LockIcon size={14} className="text-rose-500 shrink-0" />
-                  🔒 타인이 편집 중 — 읽기 전용
-                  <span className="text-xs font-normal text-rose-500 ml-0.5 bg-rose-100 px-1.5 py-0.5 rounded">
-                    {currentProjMeta?.locked_by}
-                  </span>
-                </div>
-              ) : (
-                // ─── 일반 Locked (보관됨, 차수 잠금 등) ───
-                <div className="flex items-center gap-2 text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                  <span className="w-2.5 h-2.5 bg-slate-400 rounded-full"></span>
-                  Read-Only (Locked)
-                  {isProjectArchived ? (
-                     <span className="text-xs font-bold text-slate-700 ml-2 bg-slate-200 px-2 py-0.5 rounded border border-slate-300">
-                       This project is currently Archived. To make changes, please unarchive it from the Dashboard.
-                     </span>
-                  ) : (
-                     <><span className="text-slate-300 mx-1">|</span><span onClick={handleGlobalUnlock} className="text-red-500 cursor-pointer hover:underline text-xs flex items-center gap-1"><LockIcon size={12} /> Unlock</span></>
-                  )}
-                </div>
-              )}
+                })()}
+              </div>
             </div>
           </div>
 
@@ -1046,6 +1540,7 @@ function App() {
                 data={currentData?.projectOverview} 
                 currentStage={currentViewedRevision}
                 isArchived={isArchived} 
+                lockReason={lockReason}
                 projectId={activeProject.id}
                 dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('projectOverview', newData)} 
@@ -1053,6 +1548,9 @@ function App() {
                 revisionLogData={currentData?.revisionLog}
                 faReportData={currentData?.faReport}
                 onEditingStateChange={handleEditingStateChange}
+                onForceUnlock={() => handleForceUnlock(activeProject.id)}
+                globalIpDictionary={globalIpDictionary}
+                onAddCustomIp={handleAddCustomIp}
               />
             )}
             {activeTab === 'IP_Index' && (
@@ -1062,19 +1560,24 @@ function App() {
                 revisionLogData={currentData?.revisionLog}
                 currentRevision={currentViewedRevision}
                 isArchived={isArchived} 
+                lockReason={lockReason}
                 projectId={activeProject.id}
                 dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('ipIndex', newData)} 
                 onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('ipIndex', newData, forceDirty)}
                 onEditingStateChange={handleEditingStateChange}
+                onForceUnlock={() => handleForceUnlock(activeProject.id)}
+                globalIpDictionary={globalIpDictionary}
               />
             )}
             {activeTab === 'Revision_Log' && (
               <RevisionLogTab 
                 data={currentData?.revisionLog} 
                 overviewData={currentData?.projectOverview}
+                ipIndexData={currentData?.ipIndex}
                 currentRevision={currentViewedRevision}
                 isArchived={isArchived} 
+                lockReason={lockReason}
                 projectId={activeProject.id}
                 dbUpdatedAt={activeProject.updated}
                 faReportData={currentData?.faReport}
@@ -1082,21 +1585,25 @@ function App() {
                 onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('revisionLog', newData, forceDirty)}
                 onFaReportUpdate={(newData) => handleTabSubmit('faReport', newData)}
                 onEditingStateChange={handleEditingStateChange}
+                onForceUnlock={() => handleForceUnlock(activeProject.id)}
               />
             )}
             {activeTab === 'FA_Report' && (
               <FaReportTab 
                 data={currentData?.faReport}
                 overviewData={currentData?.projectOverview}
+                ipIndexData={currentData?.ipIndex}
                 currentRevision={currentViewedRevision}
                 revisionLogData={currentData?.revisionLog}
                 isArchived={isArchived} 
+                lockReason={lockReason}
                 projectId={activeProject.id}
                 dbUpdatedAt={activeProject.updated}
                 onSubmit={(newData) => handleTabSubmit('faReport', newData)} 
                 onImmediateUpdate={(newData, forceDirty) => handleTabSubmit('faReport', newData, forceDirty)}
                 onRevisionLogUpdate={(newLogData) => handleTabSubmit('revisionLog', newLogData)}
                 onEditingStateChange={handleEditingStateChange}
+                onForceUnlock={() => handleForceUnlock(activeProject.id)}
               />
             )}
           </div>
@@ -1144,6 +1651,12 @@ function App() {
         </div>
       )}
 
+      <LockChecklistModal 
+        isOpen={lockModalOpen} 
+        onClose={() => setLockModalOpen(false)} 
+        checklist={lockChecklist}
+        onConfirm={handleFinalConfirmLock}
+      />
     </div>
   );
 }

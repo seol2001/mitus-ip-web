@@ -3,9 +3,10 @@ import { ipCategoryNameMap, makeDefaultIpIndex } from '../../data/mockData';
 import { X } from '../Icons';
 import ActionBar from '../ActionBar';
 import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
-import { BookOpen, Lock, Copy } from 'lucide-react';
+import { BookOpen, Lock, Copy, Plus, Trash2 } from 'lucide-react';
 import { DEFAULT_IP_CONTENTS_SCHEMA } from '../../data/schemaConfig';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
@@ -31,10 +32,12 @@ const SortableField = ({ id, isEditing, className, children }) => {
   );
 };
 
-const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange }) => {
+const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange, onForceUnlock, globalIpDictionary }) => {
   const [unlockedOverview, setUnlockedOverview] = useState(false);
+  const dictToUse = globalIpDictionary || ipCategoryNameMap;
   const [selectedIpForIndex, setSelectedIpForIndex] = useState(null);
-  const [isTemplateEditing, setIsTemplateEditing] = useState(false);
+  
+  const showConfirm = useConfirm();
   const [keySpecSchema, setKeySpecSchema] = useState([]); 
   const [ipContentsSchema, setIpContentsSchema] = useState([]); // 🚀 컨텐츠 카드 스키마 상태 추가
 
@@ -115,8 +118,15 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
     setKeySpecSchema(newSchema);
     updateCurrentIp({ UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Key_Spec: newSchema } });
   };
-  const handleKeySpecDelete = (id) => {
-    if (window.confirm("이 항목을 삭제하시겠습니까?")) {
+  const handleKeySpecDelete = async (id) => {
+    const confirmed = await showConfirm({
+      title: "항목 삭제 확인",
+      message: "이 항목을 삭제하시겠습니까?",
+      type: "danger",
+      confirmText: "삭제"
+    });
+
+    if (confirmed) {
       const newSchema = keySpecSchema.filter(f => f.id !== id);
       setKeySpecSchema(newSchema);
       const newKeySpecData = { ...(currentIpData.Key_Spec || {}) };
@@ -158,8 +168,15 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
     setIpContentsSchema(newSchema);
     updateCurrentIp({ UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Contents: newSchema } });
   };
-  const handleIpContentsDelete = (id) => {
-    if (window.confirm("이 카드 전체를 삭제하시겠습니까?")) {
+  const handleIpContentsDelete = async (id) => {
+    const confirmed = await showConfirm({
+      title: "컨텐츠 카드 삭제",
+      message: "이 카드 전체를 삭제하시겠습니까?\n내부의 모든 데이터가 유실됩니다.",
+      type: "danger",
+      confirmText: "카드 삭제"
+    });
+
+    if (confirmed) {
       const newSchema = ipContentsSchema.filter(f => f.id !== id);
       setIpContentsSchema(newSchema);
       const newData = { ...currentIpData, UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Contents: newSchema } };
@@ -186,6 +203,32 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
     const newData = { ...safeData, [selectedIpForIndex]: { ...currentIpData, ...patch } };
     if (onImmediateUpdate) onImmediateUpdate(newData);
   };
+
+  const handleAddSubBlock = () => {
+    const currentSubBlocks = currentIpData.Sub_Blocks || [];
+    const newSubBlock = { 
+      id: `sb_${Date.now()}`, 
+      name: '', 
+      motherProject: '', 
+      motherIpName: '',
+      modificationLevel: 'New',
+      keyFeatures: ''
+    };
+    updateCurrentIp({ Sub_Blocks: [...currentSubBlocks, newSubBlock] });
+  };
+
+  const handleSubBlockChange = (id, field, value) => {
+    const currentSubBlocks = currentIpData.Sub_Blocks || [];
+    const newSubBlocks = currentSubBlocks.map(sb => sb.id === id ? { ...sb, [field]: value } : sb);
+    updateCurrentIp({ Sub_Blocks: newSubBlocks });
+  };
+
+  const handleRemoveSubBlock = (id) => {
+    const currentSubBlocks = currentIpData.Sub_Blocks || [];
+    const newSubBlocks = currentSubBlocks.filter(sb => sb.id !== id);
+    updateCurrentIp({ Sub_Blocks: newSubBlocks });
+  };
+
   const handleSubmit = () => {
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'IP_Index');
@@ -202,6 +245,18 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   const labelClass = "block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 ml-1";
   const inputClass = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 bg-slate-50 focus:bg-white transition-colors disabled:opacity-50 disabled:bg-slate-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 placeholder:font-medium placeholder:text-slate-300";
 
+  const subLabelClass = "block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1";
+  const subInputClass = "w-full border border-slate-100 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 bg-white focus:bg-white transition-colors disabled:opacity-50 disabled:bg-slate-50 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-50 placeholder:font-normal placeholder:text-slate-300 shadow-sm";
+
+  // --- [5] IP Index 데이터 파이프라인 (미결 이슈 현황 파생 데이터) ---
+  const pendingIssues = revisionLogData?.issues?.filter(i => {
+    if (i.ipBlock) return i.ipBlock === selectedIpForIndex && i.isPendingAction;
+    const id = i.targetIssue || '';
+    return id.startsWith(selectedIpForIndex + '.') && i.isPendingAction;
+  }) || [];
+  const futureFixes = pendingIssues.filter(i => i.disposition === 'Future Fix');
+  const carryOverCount = pendingIssues.filter(i => i.isCarryOver).length;
+
   return (
     <div className="max-w-full space-y-4 text-left h-full pb-10">
       
@@ -213,36 +268,26 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
       />
 
       {/* ── 헤더 (Title + 템플릿 편집 버튼 + ActionBar) ── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 mb-6 w-full gap-4">
-        <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2 shrink-0">
-          <BookOpen size={28} className="text-blue-600" />
-          IP Index
-          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1 ml-1"><Lock size={11} />Read-Only</span>}
-        </h1>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center pb-4 border-b border-slate-200 mb-6 w-full gap-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2 shrink-0">
+            <BookOpen size={28} className="text-blue-600" />
+            IP Index
+          </h1>
+          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1"><Lock size={11} />Read-Only</span>}
+        </div>
         
-        <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
-          {!isOverviewDisabled && selectedIpForIndex && (
-            <div className="flex items-center gap-2 bg-indigo-50 px-2 py-1.5 rounded-lg border border-indigo-100">
-              <button onClick={() => setIsTemplateEditing(!isTemplateEditing)} className={`text-xs font-bold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 ${isTemplateEditing ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-600 hover:bg-indigo-100"}`}>
-                {isTemplateEditing ? "✅ 편집 완료" : "⚙️ 템플릿 편집"}
-              </button>
-              {isTemplateEditing && (
-                <button onClick={() => { 
-                    if (window.confirm("템플릿을 초기화하시겠습니까?")) { 
-                        const generated = Object.keys(currentIpData.Key_Spec || {}).map(k => ({ id: k, label: k }));
-                        setKeySpecSchema(generated); 
-                        setIpContentsSchema(DEFAULT_IP_CONTENTS_SCHEMA);
-                        setIsTemplateEditing(false); 
-                        updateCurrentIp({ UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Key_Spec: generated, Contents: DEFAULT_IP_CONTENTS_SCHEMA } });
-                    } 
-                }} className="text-xs font-bold text-red-500 hover:text-white bg-white hover:bg-red-500 border border-red-200 hover:border-red-500 px-2 py-1.5 rounded-md transition-all flex items-center gap-1" title="기본 템플릿으로 복구">
-                  🔄 초기화
-                </button>
-              )}
-            </div>
-          )}
-          <div className="shrink-0 border-l pl-4 border-slate-200">
-            <ActionBar isGlobalArchived={isArchived} isEditing={unlockedOverview} onEdit={() => setUnlockedOverview(true)} onLock={handleSubmit} />
+        <div className="flex items-center gap-3 flex-wrap">
+          
+          <div className="shrink-0 border-l pl-3 border-slate-200">
+            <ActionBar 
+              isGlobalArchived={isArchived} 
+              isEditing={unlockedOverview} 
+              onEdit={() => setUnlockedOverview(true)} 
+              onLock={handleSubmit} 
+              lockReason={lockReason}
+              onForceUnlock={onForceUnlock}
+            />
           </div>
         </div>
       </div>
@@ -286,8 +331,8 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
               {renderSectionHeader('IP Identity & Lineage')}
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className={labelClass}>IP Category</label><select name="IP_Category" value={currentIpData.IP_Category || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled}>{Object.keys(ipCategoryNameMap).map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                  <div><label className={labelClass}>IP Name</label><select name="IP_Name" value={currentIpData.IP_Name || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled}>{(ipCategoryNameMap[currentIpData.IP_Category] || []).map(ip => <option key={ip} value={ip}>{ip}</option>)}</select></div>
+                  <div><label className={labelClass}>IP Category</label><select name="IP_Category" value={currentIpData.IP_Category || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled}>{Object.keys(dictToUse).map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                  <div><label className={labelClass}>IP Name</label><select name="IP_Name" value={currentIpData.IP_Name || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled}>{(dictToUse[currentIpData.IP_Category] || []).map(ip => <option key={ip} value={ip}>{ip}</option>)}</select></div>
                   <div>
                     <div className="flex justify-between items-end mb-1.5"><label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">IP Version</label><span className="text-[10px] text-blue-500 font-bold mb-1">Auto update</span></div>
                     <input type="text" value={currentRevision} className={inputClass + " bg-slate-50"} disabled />
@@ -301,10 +346,111 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
             </div>
 
             <div className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h2 className="text-lg font-extrabold text-slate-800">Sub-Blocks (BOM) & Lineage</h2>
+                {!isOverviewDisabled && (
+                  <button onClick={handleAddSubBlock} className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded flex items-center gap-1 transition-colors">
+                    <Plus size={14} /> Add Sub-Block
+                  </button>
+                )}
+              </div>
+              
+              {(!currentIpData.Sub_Blocks || currentIpData.Sub_Blocks.length === 0) ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-sm font-bold text-slate-400">
+                  등록된 서브 블록이 없는 단일(Leaf) IP입니다.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {currentIpData.Sub_Blocks.map((sb, idx) => (
+                    <div key={sb.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm space-y-3 relative group hover:border-blue-200 transition-all">
+                      {!isOverviewDisabled && (
+                        <button onClick={() => handleRemoveSubBlock(sb.id)} className="absolute top-3 right-3 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Remove Sub-Block">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      
+                      {/* Sub-Block Name: 콤팩트한 상단 헤더 */}
+                      <div className="pr-8">
+                        <label className={subLabelClass}>Sub-Block Name (Title)</label>
+                        <input type="text" value={sb.name} onChange={(e) => handleSubBlockChange(sb.id, 'name', e.target.value)} placeholder="e.g. Gate_Driver" className={subInputClass + " font-extrabold text-slate-800 bg-slate-50/50"} disabled={isOverviewDisabled} />
+                      </div>
+
+                      {/* Lineage Info: 상위 섹션과 동일하게 세로로 한 칸씩 배치 */}
+                      <div className="space-y-3 pt-2 border-t border-slate-50">
+                        <div>
+                          <label className={subLabelClass}>Mother Project</label>
+                          <input type="text" value={sb.motherProject} onChange={(e) => handleSubBlockChange(sb.id, 'motherProject', e.target.value)} placeholder="e.g. SM5713" className={subInputClass} disabled={isOverviewDisabled} />
+                        </div>
+                        <div>
+                          <label className={subLabelClass}>Mother IP / Block Name</label>
+                          <input type="text" value={sb.motherIpName || ''} onChange={(e) => handleSubBlockChange(sb.id, 'motherIpName', e.target.value)} placeholder="e.g. Buck_v2 or GD_Block" className={subInputClass} disabled={isOverviewDisabled} />
+                        </div>
+                        <div>
+                          <label className={subLabelClass}>Modification Level</label>
+                          <select value={sb.modificationLevel} onChange={(e) => handleSubBlockChange(sb.id, 'modificationLevel', e.target.value)} className={subInputClass} disabled={isOverviewDisabled}>
+                            <option value="Reuse">Reuse</option>
+                            <option value="Minor">Minor</option>
+                            <option value="Major">Major</option>
+                            <option value="New">New</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Key Features / Specifications: 지식 자산화를 위한 핵심 필드 */}
+                      <div className="pt-2">
+                        <label className={subLabelClass}>Key Features / Specifications</label>
+                        <textarea 
+                          value={sb.keyFeatures || ''} 
+                          onChange={(e) => handleSubBlockChange(sb.id, 'keyFeatures', e.target.value)} 
+                          placeholder="주요 설계 사양, 성능 특징, 주의사항 등을 요약 입력 (ex. Slew-rate 50V/us, Low-IQ mode 지원)" 
+                          className={subInputClass + " min-h-[50px] py-2 leading-relaxed font-medium"} 
+                          rows="2"
+                          disabled={isOverviewDisabled}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
+
               {renderSectionHeader('문서 관리 정보')}
               <div className="grid grid-cols-2 gap-4">
                 <div><label className={labelClass}>Design Owner</label><input type="text" name="Design_Owner" value={currentIpData.Design_Owner || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled} /></div>
                 <div><label className={labelClass}>Last Updated</label><input type="date" name="Last_Updated" value={currentIpData.Last_Updated || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled} /></div>
+              </div>
+            </div>
+
+            {/* 🚀 미결 이슈 현황 (파생 데이터) */}
+            <div className="bg-red-50 p-6 rounded-2xl shadow-sm border border-red-100 space-y-4">
+              <div className="flex justify-between items-center border-b border-red-200 pb-2">
+                <h2 className="text-sm font-extrabold text-red-800">미결 이슈 현황</h2>
+                <span className="text-[10px] font-bold bg-white text-red-500 px-2 py-1 rounded shadow-sm border border-red-100">Read Only</span>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-red-100">
+                  <span className="text-xs font-bold text-slate-600">총 미결 이슈 (Pending)</span>
+                  <span className="text-sm font-extrabold text-red-600">{pendingIssues.length} 건</span>
+                </div>
+                {carryOverCount > 0 && (
+                  <div className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-red-100">
+                    <span className="text-xs font-bold text-slate-600">이월된 항목 (Carry-Over)</span>
+                    <span className="text-sm font-extrabold text-indigo-600">{carryOverCount} 건</span>
+                  </div>
+                )}
+                {futureFixes.length > 0 && (
+                  <div className="flex justify-between items-center bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+                    <span className="text-xs font-bold text-amber-700">Future Fix (주의)</span>
+                    <span className="text-sm font-extrabold text-amber-600">{futureFixes.length} 건</span>
+                  </div>
+                )}
+                {pendingIssues.length === 0 && (
+                  <div className="text-center py-2 text-xs font-bold text-red-400">
+                    현재 IP에 대한 미결 이슈가 없습니다.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -317,33 +463,38 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleKeySpecDragEnd}>
                 <SortableContext items={keySpecSchema.map(f => f.id)} strategy={verticalListSortingStrategy}>
                   <div className="w-full text-sm text-left border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-                    {!isTemplateEditing && keySpecSchema.length > 0 && (
+                    {keySpecSchema.length > 0 && (
                       <div className="flex bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                         <div className="px-4 py-3 w-1/3 border-r border-slate-200 shrink-0">Parameter Key</div>
                         <div className="px-4 py-3 flex-1">Value</div>
                       </div>
                     )}
-                    {keySpecSchema.map((field) => (
-                      <SortableField key={field.id} id={field.id} isEditing={isTemplateEditing} className={`flex items-stretch border-b border-slate-100 last:border-0 ${isTemplateEditing ? "p-2 bg-indigo-50/60 transition-all m-1 rounded-lg border border-indigo-100" : "hover:bg-slate-50"}`}>
+                    {keySpecSchema.map((field) => {
+                      const isCustomKey = !Object.keys(currentIpData.Key_Spec || {}).includes(field.id) || field.id.startsWith('KeySpec_');
+                      return (
+                      <SortableField key={field.id} id={field.id} isEditing={unlockedOverview} className="flex items-stretch border-b border-slate-100 last:border-0 hover:bg-slate-50 group">
                         {(dragListeners, dragAttributes) => (
-                          isTemplateEditing ? (
-                            <div className="flex items-center gap-2 w-full">
-                              <div className="cursor-grab active:cursor-grabbing text-indigo-400 hover:text-indigo-700 px-1 shrink-0" {...dragListeners} {...dragAttributes}>⠿</div>
-                              <input type="text" value={field.label} onChange={(e) => handleKeySpecLabelChange(field.id, e.target.value)} className="w-1/3 min-w-0 border border-indigo-200 rounded-md px-2 py-1.5 text-xs font-bold text-indigo-900 bg-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200" placeholder="Parameter Key" />
-                              <div className="flex-1 text-xs text-slate-400 px-3 py-1.5 border border-dashed border-slate-200 rounded bg-slate-50/50 flex items-center h-full">값(Value) 입력 영역</div>
-                              <button onClick={() => handleKeySpecClone(field)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md shrink-0" title="이 항목 복제"><Copy size={14} /></button>
-                              <button onClick={() => handleKeySpecDelete(field.id)} className="p-1.5 text-red-400 hover:bg-red-100 rounded-md shrink-0" title="항목 삭제"><X size={14} /></button>
-                            </div>
-                          ) : (
                             <div className="flex w-full items-stretch min-h-[44px]">
-                              <div className="px-4 py-2 w-1/3 border-r border-slate-200 text-xs font-mono text-slate-600 bg-slate-50/50 flex items-center break-all shrink-0">{field.label}</div>
-                              <div className="flex-1 p-0 flex"><input type="text" value={currentIpData.Key_Spec?.[field.id] || ''} onChange={(e) => handleIpKeySpecChange(field.id, e.target.value)} className={`w-full px-4 py-2 bg-transparent outline-none focus:bg-blue-50 font-mono text-xs text-blue-900 transition-colors placeholder:text-slate-300 ${isOverviewDisabled ? 'text-slate-400 cursor-not-allowed' : ''}`} disabled={isOverviewDisabled} placeholder="Input value..." /></div>
+                              <div className="px-2 py-2 w-1/3 border-r border-slate-200 text-xs font-mono text-slate-600 bg-slate-50/50 flex items-center shrink-0 gap-1">
+                                {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1" {...dragListeners} {...dragAttributes}>⠿</div>}
+                                {unlockedOverview && isCustomKey ? (
+                                  <input type="text" value={field.label} onChange={(e) => handleKeySpecLabelChange(field.id, e.target.value)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-amber-400 font-bold text-slate-700" placeholder="Parameter Key" />
+                                ) : (
+                                  <span className="px-2">{field.label}</span>
+                                )}
+                              </div>
+                              <div className="flex-1 p-0 flex items-center relative">
+                                <input type="text" value={currentIpData.Key_Spec?.[field.id] || ''} onChange={(e) => handleIpKeySpecChange(field.id, e.target.value)} className={`w-full px-4 py-2 bg-transparent outline-none focus:bg-blue-50 font-mono text-xs text-blue-900 transition-colors placeholder:text-slate-300 ${isOverviewDisabled ? 'text-slate-400 cursor-not-allowed' : ''}`} disabled={isOverviewDisabled} placeholder="Input value..." />
+                                {unlockedOverview && isCustomKey && (
+                                  <button onClick={() => handleKeySpecDelete(field.id)} className="absolute right-2 text-slate-300 hover:text-red-500 transition-colors p-1"><X size={14} /></button>
+                                )}
+                              </div>
                             </div>
-                          )
                         )}
                       </SortableField>
-                    ))}
-                    {isTemplateEditing && <div className="p-2 bg-slate-50/50 border-t border-slate-200"><button onClick={handleKeySpecAdd} className="w-full py-2.5 border-2 border-dashed border-indigo-200 rounded-lg text-indigo-600 font-bold text-xs hover:bg-indigo-50 hover:border-indigo-400 transition-colors flex items-center justify-center gap-1">➕ 새 파라미터 추가</button></div>}
+                      );
+                    })}
+                    {unlockedOverview && <div className="p-2 bg-slate-50/50 border-t border-slate-200"><button onClick={handleKeySpecAdd} className="w-full py-2.5 border-2 border-dashed border-amber-200 rounded-lg text-amber-600 font-bold text-xs hover:bg-amber-50 hover:border-amber-400 transition-colors flex items-center justify-center gap-1">➕ 새 파라미터 추가</button></div>}
                   </div>
                 </SortableContext>
               </DndContext>
@@ -352,28 +503,34 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
             {/* 🚀 IP 컨텐츠 카드 영역 (D&D 및 자동 넘버링 적용) */}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleIpContentsDragEnd}>
               <SortableContext items={ipContentsSchema.map(f => f.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-6">
-                  {ipContentsSchema.map((field, index) => (
-                    <SortableField key={field.id} id={field.id} isEditing={isTemplateEditing} className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"} ${isTemplateEditing ? "ring-4 ring-indigo-50 border-indigo-200" : ""}`}>
+                  <div className="space-y-6">
+                  {ipContentsSchema.map((field, index) => {
+                    const isCustomContents = field.type === 'custom';
+                    return (
+                    <SortableField key={field.id} id={field.id} isEditing={unlockedOverview} className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
                       {(dragListeners, dragAttributes) => (
                         <>
-                          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                            {isTemplateEditing ? (
-                              <div className="flex items-center gap-3 w-full">
-                                <div className="cursor-grab active:cursor-grabbing text-indigo-400 hover:text-indigo-700 px-1 font-bold w-6 text-center" title="드래그하여 이동" {...dragListeners} {...dragAttributes}>⠿</div>
-                                <span className="text-sm font-extrabold text-indigo-900">{index + 1}.</span>
-                                <input type="text" value={field.label} onChange={(e) => handleIpContentsLabelChange(field.id, e.target.value)} className="flex-1 border border-indigo-200 rounded-lg px-3 py-1.5 text-sm font-bold text-indigo-900 bg-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200" />
-                                <button onClick={() => handleIpContentsDelete(field.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg"><X size={18} /></button>
-                              </div>
-                            ) : (
-                              <>
+                          <div className="flex justify-between items-center border-b border-slate-100 pb-3 gap-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1 font-bold w-6 text-center" title="드래그하여 이동" {...dragListeners} {...dragAttributes}>⠿</div>}
+                              {unlockedOverview && isCustomContents ? (
+                                <div className="flex items-center gap-2 w-full max-w-md">
+                                  <span className="text-lg font-extrabold text-slate-800">{index + 1}.</span>
+                                  <input type="text" value={field.label} onChange={(e) => handleIpContentsLabelChange(field.id, e.target.value)} className="flex-1 border border-slate-200 rounded-lg px-3 py-1 text-sm font-bold text-slate-800 bg-white outline-none focus:border-amber-400" placeholder="섹션 제목" />
+                                </div>
+                              ) : (
                                 <h2 className="text-lg font-extrabold text-slate-800">{index + 1}. {field.label}</h2>
-                                {isOverviewDisabled && <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">Locked</span>}
-                              </>
-                            )}
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              {isOverviewDisabled && <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">Locked</span>}
+                              {unlockedOverview && isCustomContents && (
+                                <button onClick={() => handleIpContentsDelete(field.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><X size={18} /></button>
+                              )}
+                            </div>
                           </div>
 
-                          {/* 카드 타입별 렌더링 로직 */}
                           {field.type === 'architecture' && (
                             <div className="space-y-4">
                               <div><label className={labelClass}>주요 블록 구성 (Sub-Blocks)</label><textarea value={currentIpData.Sec1_SubBlocks || ''} onChange={(e) => handleIpIndexChange({target:{name:'Sec1_SubBlocks', value:e.target.value}})} className={`${inputClass} font-mono`} disabled={isOverviewDisabled} rows={4}></textarea></div>
@@ -392,12 +549,13 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                         </>
                       )}
                     </SortableField>
-                  ))}
-                  {isTemplateEditing && (
-                    <button onClick={handleIpContentsAdd} className="w-full py-4 mt-2 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-600 font-bold text-sm hover:bg-indigo-50 hover:border-indigo-400 transition-colors flex items-center justify-center gap-2">➕ 새 컨텐츠 카드 추가</button>
+                    );
+                  })}
+                  {unlockedOverview && (
+                    <button onClick={handleIpContentsAdd} className="w-full py-4 mt-2 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-sm hover:bg-amber-50 hover:border-amber-400 transition-colors flex items-center justify-center gap-2">➕ 새 컨텐츠 카드 추가</button>
                   )}
-                </div>
-              </SortableContext>
+                  </div>
+                </SortableContext>
             </DndContext>
 
             {/* 고정 영역: Revision History (자동 넘버링 동기화) */}

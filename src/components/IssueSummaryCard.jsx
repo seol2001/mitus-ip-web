@@ -60,6 +60,20 @@ export default function IssueSummaryCard({
   // ── Badge Logic (Rule 1 & 2: Optimization & Focus) ──
   const badges = [];
 
+  // 0. Sub-block Lineage Badge
+  const ipName = item.ipBlock || (item.targetIssue ? item.targetIssue.split('.')[0] : 'Unknown');
+  if (item.subBlock) {
+    badges.push({ 
+      label: `[${ipName} ➔ ${item.subBlock}]`, 
+      style: 'bg-indigo-50 text-indigo-700 border-indigo-200 font-bold' 
+    });
+  } else {
+    badges.push({ 
+      label: `[${ipName}]`, 
+      style: 'bg-slate-100 text-slate-600 border-slate-200' 
+    });
+  }
+
   // 1. 이슈 유형 (Entry Mode)
   if (item.entryMode === 'eval') {
     const isDeferred = item.assessment === 'Deferred';
@@ -238,6 +252,8 @@ export default function IssueSummaryCard({
                 {item.rootCause && <div className="col-span-full"><span className="font-semibold text-slate-600 mr-1">Root Cause:</span> <span className="whitespace-pre-wrap">{item.rootCause}</span></div>}
                 {item.modPlan && <div className="col-span-full"><span className="font-semibold text-slate-600 mr-1">Mod. Plan:</span> <span className="whitespace-pre-wrap">{item.modPlan}</span></div>}
                 {item.justification && <div className="col-span-full"><span className="font-semibold text-slate-600 mr-1">Justification:</span> <span className="whitespace-pre-wrap">{item.justification}</span></div>}
+                {item.verificationGap && <div className="col-span-full"><span className="font-bold text-slate-800 mr-1">Verification Gap:</span> <span className="whitespace-pre-wrap font-bold">{item.verificationGap}</span></div>}
+                {item.gapComment && <div className="col-span-full"><span className="font-bold text-slate-800 mr-1">Gap Comment:</span> <span className="whitespace-pre-wrap font-bold">{item.gapComment}</span></div>}
                 {item.entryMode === 'eval' && item.comment && <div className="col-span-full"><span className="font-semibold text-slate-600 mr-1">Eval Comment:</span> <span className="whitespace-pre-wrap">{item.comment}</span></div>}
               </div>
             )}
@@ -285,6 +301,8 @@ export default function IssueSummaryCard({
           <div className="space-y-2 text-xs text-gray-600">
              {item.phenomenon && <div><span className="font-semibold text-gray-700">Phenomenon: </span><span className="whitespace-pre-wrap">{item.phenomenon}</span></div>}
              {item.rootCause && <div><span className="font-semibold text-gray-700">Root Cause: </span><span className="whitespace-pre-wrap">{item.rootCause}</span></div>}
+             {item.verificationGap && <div><span className="font-bold text-gray-800">Verification Gap: </span><span className="whitespace-pre-wrap font-bold text-gray-900">{item.verificationGap}</span></div>}
+             {item.gapComment && <div><span className="font-bold text-gray-800">Gap Comment: </span><span className="whitespace-pre-wrap font-bold text-gray-900">{item.gapComment}</span></div>}
              {item.modPlan && <div><span className="font-semibold text-gray-700">Mod Plan: </span><span className="whitespace-pre-wrap">{item.modPlan}</span></div>}
              {item.justification && <div><span className="font-semibold text-gray-700">Justification: </span><span className="whitespace-pre-wrap">{item.justification}</span></div>}
              {item.entryMode === 'eval' && item.comment && <div><span className="font-semibold text-gray-700">Comment: </span><span className="whitespace-pre-wrap">{item.comment}</span></div>}

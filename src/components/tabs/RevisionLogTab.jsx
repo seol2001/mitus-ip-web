@@ -4,12 +4,22 @@ import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
 import ActionBar from '../ActionBar';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 const lc = "block text-[13px] font-medium text-gray-600 mb-1.5";
 const ic = "px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
 const tc = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none";
 
-const DISPOSITION_OPTIONS = ['Waived', 'Acceptable', 'SW Workaround', 'Test Screening', 'System Mitigation', 'Revision'];
+const DISPOSITION_OPTIONS = ['Waived', 'Acceptable', 'SW Workaround', 'Test Screening', 'System Mitigation', 'Revision', 'Closed'];
+
+const VERIFICATION_GAP_OPTIONS = [
+  'Verification Plan Omission',
+  'Model/PDK Mismatch',
+  'Simulation Limitation',
+  'Review Miss (Human Error)',
+  'Spec Ambiguity',
+  'Etc.'
+];
 
 const CustomerAlignmentFields = ({ formData, handleInput, lc, ic, tc, disabled = false }) => (
   <div className="border border-indigo-100 rounded-xl p-4 bg-slate-50 space-y-3">
@@ -28,7 +38,7 @@ const CustomerAlignmentFields = ({ formData, handleInput, lc, ic, tc, disabled =
   </div>
 );
 
-export default function RevisionLogTab({ data, overviewData, currentRevision, isArchived, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange }) {
+export default function RevisionLogTab({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onForceUnlock }) {
   // Safe defaults
   const safeData = data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' };
   const issues = safeData.issues || [];
@@ -65,22 +75,22 @@ export default function RevisionLogTab({ data, overviewData, currentRevision, is
   const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
 
 const makeDefaultForm = (ip) => ({
-  ipBlock: ip, entryMode: 'new', issueNum: '', types: ['Initial'], severity: 'Minor',
+  ipBlock: ip, subBlock: null, entryMode: 'new', issueNum: '', types: ['Initial'], severity: 'Minor',
   phenomenon: '', rootCause: '', disposition: 'Revision', justification: '', modPlan: '',
+  verificationGap: '', gapComment: '',
   customerAlignment: 'Internal Only', customerReportType: 'N/A', sanitizedStory: '',
   customerFacingAttachments: '', customerAlignmentDetails: '', attachments: '', assignee: '',
   origin: '', escapeReason: '', sideEffectSource: ''
 });
 
   const [formData, setFormData] = useState(makeDefaultForm(currentSelectedIp, stage));
+  const showConfirm = useConfirm();
   // expandedHistoryItems → IssueCard 내부 상태로 이전됨
-  const [deleteModal, setDeleteModal] = useState(null);
   const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTargetId, setHistoryTargetId] = useState('');
   const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
   const [selectedFaForPull, setSelectedFaForPull] = useState(null);
-  const [cancelConfirmModal, setCancelConfirmModal] = useState(false);
 
   // ── 탭 로컬 편집 상태 (ProjectOverviewTab의 unlockedOverview와 동일한 패턴) ──
   const [isTabEditing, setIsTabEditing] = useState(false);
@@ -127,8 +137,16 @@ const makeDefaultForm = (ip) => ({
   }, [currentSelectedIp, editingId, mode]);
 
   // ── pendingFaPullDataRef: handlePullFa에서 직접 setFormData를 호출하므로 이 effect는 불필요
-  // mode 변경 시 자동 초기화 useEffect를 제거하여 경쟁 조건(race condition)을 원천 차단합니다.
-  // 폼 초기화는 각 액션(handleTabSwitch, handleSave, cancelEdit)에서 명시적으로 수행합니다.
+  useEffect(() => {
+    if (formData.assessment === 'Fixed') {
+      if (formData.disposition !== 'Closed') {
+        setFormData(prev => ({ ...prev, disposition: 'Closed' }));
+      }
+    } else if (formData.entryMode === 'eval' && formData.disposition === 'Closed') {
+      // Fixed에서 다른 상태로 변경 시 Disposition 초기화
+      setFormData(prev => ({ ...prev, disposition: 'Revision' }));
+    }
+  }, [formData.assessment]);
 
   const latestIssueStates = useMemo(() => {
     const s = {};
@@ -268,9 +286,14 @@ const makeDefaultForm = (ip) => ({
   }, [safeData, onImmediateUpdate]);
 
   const SEVERITY_FA_MAP = { S1: 'Fail', S2: 'Major', S3: 'Minor' };
-  const handlePullFa = (fa) => {
+  const handlePullFa = async (fa) => {
     if (stage === 'EVT0' && fa.disposition === 'Revision') {
-      alert("해당 이슈는 Hardware Revision이 필요하므로 EVT1 차수에서 등록해야 합니다. Revision Up을 먼저 진행해 주세요.");
+      await showConfirm({
+        title: "차수 제한",
+        message: "해당 이슈는 Hardware Revision이 필요하므로 EVT1 차수에서 등록해야 합니다. Revision Up을 먼저 진행해 주세요.",
+        type: "warning",
+        showCancel: false
+      });
       return;
     }
     const phenText = `[FA 연동: ${fa.faId}]\n• Customer: ${fa.customer || ''}${fa.custStage ? ` (${fa.custStage})` : ''}\n• Phenomenon: ${fa.phenomenon || ''}`;
@@ -290,6 +313,7 @@ const makeDefaultForm = (ip) => ({
       faId: fa.faId,
       faReportId: fa.faId,
       faCustomer: fa.customer ? `${fa.customer}${fa.custStage ? ` (${fa.custStage})` : ''}` : '',
+      subBlock: fa.subBlock || null,
     };
 
     // 경쟁 조건 방지: ref 방식 제거, 직접 상태 업데이트
@@ -325,7 +349,7 @@ const makeDefaultForm = (ip) => ({
     setSelectedFaForPull(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isArchived && editingId) {
       setEditingId(null);
       setFormData(makeDefaultForm(currentSelectedIp, stage));
@@ -335,7 +359,12 @@ const makeDefaultForm = (ip) => ({
     if (!editingId && formData.faId) {
        const isDuplicate = issues.some(issue => issue.faId === formData.faId);
        if (isDuplicate) {
-          alert("이미 연동된 FA 리포트입니다.");
+          await showConfirm({
+            title: "중복 확인",
+            message: "이미 연동된 FA 리포트입니다.",
+            type: "warning",
+            showCancel: false
+          });
           return;
        }
     }
@@ -426,6 +455,7 @@ const makeDefaultForm = (ip) => ({
         phenomenon: item.phenomenon || '',
         rootCause: item.rootCause || '',
         disposition: 'Revision',
+        subBlock: item.subBlock || null,
       });
     } else if (isEvalTarget) {
       setMode('eval');
@@ -436,6 +466,7 @@ const makeDefaultForm = (ip) => ({
         targetIssue: issueId,
         ipBlock: item.ipBlock || currentSelectedIp,
         severity: item.severity,
+        subBlock: item.subBlock || null,
       });
     } else {
       setMode('carryover');
@@ -444,6 +475,7 @@ const makeDefaultForm = (ip) => ({
         ...makeDefaultForm(item.ipBlock || currentSelectedIp),
         entryMode: 'carryover',
         targetIssue: issueId,
+        subBlock: item.subBlock || null,
       });
     }
   };
@@ -460,16 +492,28 @@ const makeDefaultForm = (ip) => ({
     }
   };
 
-  const confirmDelete = () => {
-    if (!deleteModal) return;
-    const newIssues = issues.filter(it => it.id !== deleteModal.id);
-    handleUpdate(newIssues);
-    if (onSubmit) onSubmit({ ...safeData, issues: newIssues });
-    if (deleteModal.faId) {
-      markFaLinkState(deleteModal.faId, false);
+  const handleDeleteRequest = async (item) => {
+    const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
+    const targetId = (item.entryMode === 'new' || item.entryMode === 'fa')
+      ? `${item.ipBlock}.${project}.${item.issueNum}`
+      : item.targetIssue || item.id;
+
+    const confirmed = await showConfirm({
+      title: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
+      message: item.faId ? "연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?" : (isSpecialMode ? "평가 및 대응 방안을 초기화하시겠습니까?" : "등록된 신규 이슈를 삭제하시겠습니까?"),
+      type: "danger",
+      confirmText: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 초기화" : "완전 삭제")
+    });
+
+    if (confirmed) {
+      const newIssues = issues.filter(it => it.id !== item.id);
+      handleUpdate(newIssues);
+      if (onSubmit) onSubmit({ ...safeData, issues: newIssues });
+      if (item.faId) {
+        markFaLinkState(item.faId, false);
+      }
+      if (editingId === item.id) cancelEdit();
     }
-    setDeleteModal(null);
-    if (editingId === deleteModal.id) cancelEdit();
   };
 
   const handleInput = (e) => {
@@ -500,11 +544,24 @@ const makeDefaultForm = (ip) => ({
     const prev = h.length > 1 ? h[h.length - 2] : null;
     const cur = h[h.length - 1];
     
+    const getGapStr = (data) => {
+      if (!data.verificationGap) return '';
+      return ` (Gap: ${data.verificationGap}${data.gapComment ? ` - ${data.gapComment}` : ''})`;
+    };
+    
     return (
       <div className="mt-2 bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1">
         <div className="font-bold text-slate-700 mb-1 flex items-center gap-1.5"><Activity size={12}/> Historical Context</div>
-        {prev && <div className="text-slate-500 truncate"><span className="font-semibold">[{prev.stage}]</span> {prev.data.disposition || prev.data.assessment || 'N/A'} - {prev.data.phenomenon || prev.data.comment || 'N/A'}</div>}
-        <div className="text-slate-800 font-medium truncate"><span className="font-semibold text-blue-600">[{cur.stage} - 최신]</span> {cur.data.disposition || cur.data.assessment || 'N/A'} - {cur.data.phenomenon || cur.data.comment || cur.data.reopenReason || 'N/A'}</div>
+        {prev && (
+          <div className="text-slate-500 truncate">
+            <span className="font-semibold">[{prev.stage}]</span> {prev.data.disposition || prev.data.assessment || 'N/A'} - {prev.data.phenomenon || prev.data.comment || 'N/A'}
+            {getGapStr(prev.data)}
+          </div>
+        )}
+        <div className="text-slate-800 font-medium truncate">
+          <span className="font-semibold text-blue-600">[{cur.stage} - 최신]</span> {cur.data.disposition || cur.data.assessment || 'N/A'} - {cur.data.phenomenon || cur.data.comment || cur.data.reopenReason || 'N/A'}
+          {getGapStr(cur.data)}
+        </div>
       </div>
     );
   };
@@ -527,13 +584,16 @@ const makeDefaultForm = (ip) => ({
         onRestore={handleRestore} 
         onDiscard={handleDiscard} 
       />
-      <div className="flex justify-between items-center pb-4 border-b border-slate-200 mb-6">
-        <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-3">
-          <FileText size={28} className="text-blue-600" />
-          Revision Log
-          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold ml-1">Read-Only</span>}
-        </h1>
-        <div className="shrink-0">
+      <div className="flex items-center gap-6 pb-4 border-b border-slate-200 mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-extrabold text-slate-800 flex items-center gap-3">
+            <FileText size={28} className="text-blue-600" />
+            Revision Log
+          </h1>
+          {isArchived && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-500 rounded font-bold flex items-center gap-1"><Lock size={11} />Read-Only</span>}
+        </div>
+
+        <div className="shrink-0 border-l pl-3 border-slate-200">
           {(() => {
             const unmanagedEvals = (safeData.loadedIssues || []).filter(id => !issues.some(i => i.entryMode === 'eval' && i.targetIssue === id));
             const unmanagedCarryovers = issues.filter(i => i.entryMode === 'carryover' && i.carryoverStatus === 'OPEN');
@@ -551,6 +611,8 @@ const makeDefaultForm = (ip) => ({
                 onLock={handleLock}
                 disableLock={disableLock}
                 disableReason={disableReason}
+                lockReason={lockReason}
+                onForceUnlock={onForceUnlock}
               />
             );
           })()}
@@ -572,14 +634,14 @@ const makeDefaultForm = (ip) => ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-center">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-1 bg-gray-100 p-1 rounded-lg m-0">
-              <button onClick={() => handleTabSwitch('eval')} disabled={stage === 'EVT1'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'eval' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT1' ? 'opacity-50 cursor-not-allowed' : ''}`}>이전 차수 수정 평가</button>
-              <button onClick={() => handleTabSwitch('carryover')} disabled={stage === 'EVT1'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'carryover' ? 'bg-white shadow text-purple-600 border-t-2 border-purple-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT1' ? 'opacity-50 cursor-not-allowed' : ''}`}>자동 이월 이슈 관리</button>
+              <button onClick={() => handleTabSwitch('eval')} disabled={stage === 'EVT0'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'eval' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT0' ? 'opacity-50 cursor-not-allowed' : ''}`}>이전 차수 수정 평가</button>
+              <button onClick={() => handleTabSwitch('carryover')} disabled={stage === 'EVT0'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'carryover' ? 'bg-white shadow text-purple-600 border-t-2 border-purple-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT0' ? 'opacity-50 cursor-not-allowed' : ''}`}>자동 이월 이슈 관리</button>
               <button onClick={() => handleTabSwitch('new')} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'new' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}>신규/잠재 이슈 등록</button>
               <button onClick={() => handleTabSwitch('fa')} className={`flex-1 py-1.5 rounded-md font-medium text-xs transition-colors flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden ${mode === 'fa' ? 'bg-white shadow text-amber-600 border-t-2 border-amber-500' : 'text-gray-500 hover:text-gray-700'}`}>
                 <span className="truncate">FA 리포트 연동</span>
                 {hasUnlinkedFa && (<span className="bg-red-500 text-white text-[9px] font-extrabold px-1 py-0.5 rounded-full shadow-sm shrink-0">{unlinkedFasForCurrentIp.length}건</span>)}
               </button>
-              <button onClick={() => handleTabSwitch('reopen')} disabled={stage === 'EVT1'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'reopen' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT1' ? 'opacity-50 cursor-not-allowed' : ''}`}>이슈 재오픈</button>
+              <button onClick={() => handleTabSwitch('reopen')} disabled={stage === 'EVT0'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'reopen' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT0' ? 'opacity-50 cursor-not-allowed' : ''}`}>이슈 재오픈</button>
             </div>
         </div>
 
@@ -678,11 +740,22 @@ const makeDefaultForm = (ip) => ({
           ) : (mode === 'new' || mode === 'fa') ? (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-3">
-                <div className="w-full sm:w-[35%]">
-                  <label className={lc}>IP Block (선택됨)</label>
+                <div className="w-full sm:w-[25%] shrink-0">
+                  <label className={lc}>IP Block</label>
                   <div className="h-10 px-3 flex items-center bg-blue-50 border border-blue-200 rounded-md text-sm font-bold text-blue-800">{currentSelectedIp}</div>
                 </div>
-                <div className="w-full sm:w-[65%]">
+                {ipIndexData && ipIndexData[currentSelectedIp] && ipIndexData[currentSelectedIp].Sub_Blocks && ipIndexData[currentSelectedIp].Sub_Blocks.length > 0 && (
+                  <div className="w-full sm:w-[30%] shrink-0">
+                    <label className={lc}>Sub-Block / Issue Level</label>
+                    <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => setFormData(p => ({ ...p, subBlock: e.target.value || null }))} className={`w-full ${ic}`} disabled={isReadOnly}>
+                      <option value="">[Top-Level / System Overall]</option>
+                      {ipIndexData[currentSelectedIp].Sub_Blocks.map(sb => (
+                        <option key={sb.id} value={sb.name}>{sb.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="w-full flex-1">
                   <label className={`${lc} flex justify-between`}><span>Issue Number</span></label>
                   <div className="flex gap-2">
                     <select value={issues.some(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === formData.issueNum) ? formData.issueNum : (formData.issueNum === calcNextNum(formData.ipBlock) ? 'NEW' : 'DIRECT')}
@@ -765,7 +838,22 @@ const makeDefaultForm = (ip) => ({
               <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}><option value="Marginal">Marginal</option><option value="Fail">Fail</option><option value="Major">Major</option><option value="Minor">Minor</option></select></div>
               <div><label className={lc}>Phenomenon (현상)</label><textarea name="phenomenon" value={formData.phenomenon} onChange={handleInput} className={tc} rows="3"></textarea></div>
               <div><label className={lc}>Root Cause (원인)</label><textarea name="rootCause" value={formData.rootCause} onChange={handleInput} className={tc} rows="2"></textarea></div>
-              <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={lc}>Verification Gap</label>
+                  <select name="verificationGap" value={formData.verificationGap || ''} onChange={handleInput} className={`w-full ${ic}`}>
+                    <option value="">Gap 선택...</option>
+                    {VERIFICATION_GAP_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lc}>Gap Comment</label>
+                  <input type="text" name="gapComment" value={formData.gapComment || ''} onChange={handleInput} className={`w-full ${ic}`} placeholder="구체적인 누락 맥락을 입력하세요. 예: 저온 조건 시뮬레이션 누락" />
+                </div>
+              </div>
+
+              <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} disabled={formData.assessment === 'Fixed'} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
               <CustomerAlignmentFields formData={formData} handleInput={handleInput} lc={lc} ic={ic} tc={tc} disabled={isReadOnly} />
             </div>
           ) : mode === 'carryover' ? (
@@ -940,13 +1028,23 @@ const makeDefaultForm = (ip) => ({
               <CheckCircle size={17} /> {isReadOnly ? '(읽기 전용)' : editingId ? '수정 내용 저장' : '리스트에 추가'}
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (isReadOnly) { cancelEdit(); return; }
                 const hasContent = editingId ||
                   formData.phenomenon || formData.rootCause || formData.issueNum ||
                   formData.comment || formData.reopenReason || selectedFaForPull;
                 if (hasContent) {
-                  setCancelConfirmModal(true);
+                  const confirmed = await showConfirm({
+                    title: "입력 내용 초기화",
+                    message: "작성 중인 내용이 모두 사라집니다. 초기화할까요?",
+                    type: "warning",
+                    confirmText: "초기화"
+                  });
+                  if (confirmed) {
+                    setSelectedFaForPull(null);
+                    pendingFaPullDataRef.current = null;
+                    cancelEdit();
+                  }
                 } else {
                   cancelEdit();
                 }
@@ -1149,7 +1247,7 @@ const makeDefaultForm = (ip) => ({
                               isReadOnly={isReadOnly}
                               editingId={editingId}
                               onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : setDeleteModal}
+                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
                               currentStage={stage}
                               needsEval={needsEvalSet.has(itemIssueId)}
                             />
@@ -1189,7 +1287,7 @@ const makeDefaultForm = (ip) => ({
                               isReadOnly={isReadOnly}
                               editingId={editingId}
                               onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : setDeleteModal}
+                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
                               currentStage={stage}
                               needsEval={needsEvalSet.has(itemIssueId)}
                             />
@@ -1229,7 +1327,7 @@ const makeDefaultForm = (ip) => ({
                               isReadOnly={isReadOnly}
                               editingId={editingId}
                               onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : setDeleteModal}
+                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
                               currentStage={stage}
                               needsEval={needsEvalSet.has(itemIssueId)}
                             />
@@ -1281,87 +1379,7 @@ const makeDefaultForm = (ip) => ({
         </div>
       </div>
 
-      {/* MODALS */}
-      {deleteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
-            <h3 className="text-lg font-bold mb-2 flex items-center gap-2 text-red-600">
-              {deleteModal.faId ? (
-                <><Link size={19} /> FA 연동 해제</>
-              ) : (deleteModal.entryMode === 'eval' || deleteModal.entryMode === 'carryover' || deleteModal.entryMode === 'reopen') ? (
-                <><RefreshCw size={19} /> 조치 내용 초기화</>
-              ) : (
-                <><Trash2 size={19} /> 이슈 삭제</>
-              )}
-            </h3>
-            <p className="mb-4 text-gray-600 text-sm leading-relaxed">
-              {deleteModal.faId ? (
-                '연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?'
-              ) : (deleteModal.entryMode === 'eval' || deleteModal.entryMode === 'carryover' || deleteModal.entryMode === 'reopen') ? (
-                '평가 및 대응 방안을 초기화하시겠습니까?'
-              ) : (
-                '등록된 신규 이슈를 삭제하시겠습니까?'
-              )}
-            </p>
-            {/* 삭제 대상 ID 강조 */}
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-              <span className="text-red-400 text-xs font-bold uppercase tracking-wide shrink-0">대상</span>
-              <code className="text-sm font-mono font-bold text-red-700 break-all">
-                {deleteModal.entryMode === 'new' || deleteModal.entryMode === 'fa'
-                  ? `${deleteModal.ipBlock}.${project}.${deleteModal.issueNum}`
-                  : deleteModal.targetIssue || deleteModal.id}
-              </code>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDeleteModal(null)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium text-sm"
-              >
-                취소
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium text-sm"
-              >
-                {deleteModal.faId
-                  ? 'FA 연동 해제'
-                  : (deleteModal.entryMode === 'eval' || deleteModal.entryMode === 'carryover' || deleteModal.entryMode === 'reopen')
-                    ? '조치 초기화'
-                    : '완전 삭제'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 입력 취소 confirm 모달 */}
-      {cancelConfirmModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-5 rounded-xl shadow-xl max-w-xs w-full border border-gray-200">
-            <p className="text-sm font-semibold text-gray-700 mb-1">입력 내용을 초기화할까요?</p>
-            <p className="text-xs text-gray-400 mb-5">작성 중인 내용이 모두 사라집니다.</p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setCancelConfirmModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                계속 작성
-              </button>
-              <button
-                onClick={() => {
-                  setCancelConfirmModal(false);
-                  setSelectedFaForPull(null);
-                  pendingFaPullDataRef.current = null;
-                  cancelEdit();
-                }}
-                className="px-4 py-2 text-sm font-semibold bg-gray-700 hover:bg-gray-800 text-white rounded-md transition-colors"
-              >
-                초기화
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODALS SECTION - Local Modals for specialized flows */}
 
       {/* FA Pull 모달 */}
       {pullFaModalOpen && (
