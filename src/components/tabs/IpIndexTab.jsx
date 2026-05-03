@@ -32,7 +32,7 @@ const SortableField = ({ id, isEditing, className, children }) => {
   );
 };
 
-const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange, onForceUnlock, globalIpDictionary }) => {
+const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange, onForceUnlock, globalIpDictionary, selectedIp }) => {
   const [unlockedOverview, setUnlockedOverview] = useState(false);
   const dictToUse = globalIpDictionary || ipCategoryNameMap;
   const [selectedIpForIndex, setSelectedIpForIndex] = useState(null);
@@ -62,12 +62,14 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   const safeOverview = overviewData || { IP_Blocks: [], Project_Name: '', Foundry: '', Process: '' };
   
   useEffect(() => {
-    if (!selectedIpForIndex && safeOverview.IP_Blocks.length > 0) {
+    if (selectedIp && safeOverview.IP_Blocks.includes(selectedIp)) {
+      setSelectedIpForIndex(selectedIp);
+    } else if (!selectedIpForIndex && safeOverview.IP_Blocks.length > 0) {
       setSelectedIpForIndex(safeOverview.IP_Blocks[0]);
     } else if (selectedIpForIndex && !safeOverview.IP_Blocks.includes(selectedIpForIndex)) {
       setSelectedIpForIndex(safeOverview.IP_Blocks[0] || null);
     }
-  }, [safeOverview.IP_Blocks, selectedIpForIndex]);
+  }, [safeOverview.IP_Blocks, selectedIpForIndex, selectedIp]);
 
   const isOverviewDisabled = isArchived || !unlockedOverview;
 

@@ -893,7 +893,7 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                         <button 
                           onClick={() => {
                             setUsageModalIp(null);
-                            openWorkspace(proj.id, proj.latest_evt);
+                            openWorkspace(proj.id, proj.latest_evt, 'IP_Index', usageModalIp.name);
                           }}
                           className="text-blue-600 hover:underline text-xs font-bold"
                         >
@@ -967,7 +967,7 @@ export default function Dashboard({ projects, currentUser, isDemoMode, isDbConne
                         <button 
                           onClick={() => {
                             setUsageModalSubBlock(null);
-                            openWorkspace(sb.projectId, sb.evt);
+                            openWorkspace(sb.projectId, sb.evt, 'IP_Index', sb.parentIp);
                           }}
                           className="text-blue-600 hover:underline text-xs font-bold"
                         >

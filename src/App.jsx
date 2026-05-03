@@ -134,11 +134,21 @@ function App() {
   }, [projectsList]);
 
   const [loading, setLoading] = useState(true);
+  const [isDbConnected, setIsDbConnected] = useState(false);
+
+  // ─── [아키텍처 개선] Refs (이벤트 리스너 stale closure 방지용) ───
+  const activeProjectRef = useRef(null);
+  const isDemoModeRef = useRef(false);
+  
+  const [activeProject, setActiveProject] = useState(null);
+  useEffect(() => { activeProjectRef.current = activeProject; }, [activeProject]);
+  
   const [isDemoMode, setIsDemoMode] = useState(false);
+  useEffect(() => { isDemoModeRef.current = isDemoMode; }, [isDemoMode]);
+
   const [lockModalOpen, setLockModalOpen] = useState(false);
   const [lockChecklist, setLockChecklist] = useState([]);
   const showConfirm = useConfirm();
-  const [isDbConnected, setIsDbConnected] = useState(false);
 
   const [globalIpDictionary, setGlobalIpDictionary] = useState(ipCategoryNameMap);
   const [customIpDetails, setCustomIpDetails] = useState([]);
@@ -367,13 +377,12 @@ function App() {
     });
     return true;
   };
-
-  const [activeProject, setActiveProject] = useState(null);
   const [projectData, setProjectData] = useState(null);
   const [currentViewedRevision, setCurrentViewedRevision] = useState('');
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   
   const [activeTab, setActiveTab] = useState('Project_Overview');
+  const [initialIpForIpIndex, setInitialIpForIpIndex] = useState(null);
   const tabs = ['Project_Overview', 'IP_Index', 'Revision_Log', 'FA_Report'];
 
   const LOCK_STALE_THRESHOLD_MIN = 10;
@@ -405,28 +414,31 @@ function App() {
 
   const [dirtyNavigation, setDirtyNavigation] = useState(null); 
   const [showExitWarning, setShowExitWarning] = useState(false);
+  const [showAppExitWarning, setShowAppExitWarning] = useState(false); // 앱 종료 확인 모달 상태
   const [isGloballyEditing, setIsGloballyEditing] = useState(false);
 
-  // ─── [신규] 앱 진입 시 초기 히스토리 엔트리 생성 및 뒤로가기 방지 ───
+  // ─── [아키텍처 개선] ViewState Ref (이벤트 리스너용) ───
+  const viewStateRef = useRef(viewState);
   useEffect(() => {
-    if (!window.history.state) {
-      window.history.pushState({ type: 'DASHBOARD' }, '');
-    }
+    viewStateRef.current = viewState;
+  }, [viewState]);
 
-    const handlePopState = (event) => {
-      if (viewState === 'WORKSPACE' && isGloballyEditing) {
-        window.history.pushState({ type: 'WORKSPACE' }, '');
-        setShowExitWarning(true);
-      } else {
-        setViewState('DASHBOARD');
-      }
-    };
+  // ─── [아키텍처 개선] 전역 함수 Refs (이벤트 리스너 stale closure 방지) ───
+  const showConfirmRef = useRef(showConfirm);
+  useEffect(() => {
+    showConfirmRef.current = showConfirm;
+  }, [showConfirm]);
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [viewState, isGloballyEditing]);
   const isDirtyRef = useRef(false);
   const originalDataSnapshot = useRef(null);
+  const isGloballyEditingRef = useRef(false); // Ref for event listeners
+  useEffect(() => {
+    isGloballyEditingRef.current = isGloballyEditing;
+  }, [isGloballyEditing]);
+
+  const executeExitRef = useRef(null);
+  const isExitingAppRef = useRef(false); // 앱 종료 프로세스 중인지 확인
+
   
   const latestDataRef = useRef(projectData);
   useEffect(() => {
@@ -495,6 +507,50 @@ function App() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [activeProject?.id, isDemoMode, currentUser]);
+
+  // ─── [아키텍처 개선] 전역 내비게이션 가드 (Hash + PopState) ───
+  useEffect(() => {
+    if (!isAuthorized) return; // 인증 후에만 내비게이션 제어 시작
+
+    // 1. 초기 대시보드 히스토리 스택 구축
+    const initDashboardHistory = () => {
+      // 현재 해시가 없거나 #dashboard가 아닌 경우에만 스택을 쌓음
+      if (viewStateRef.current === 'DASHBOARD' && window.location.hash !== '#dashboard') {
+        window.history.replaceState({ type: 'ROOT' }, '', ' '); 
+        window.history.pushState({ type: 'DASHBOARD' }, '', '#dashboard');
+      }
+    };
+
+    initDashboardHistory();
+
+    const handlePopState = (event) => {
+      if (isExitingAppRef.current) return;
+
+      const currentHash = window.location.hash;
+      const vState = viewStateRef.current;
+      const isDirty = isDirtyRef.current;
+      const isEditing = isGloballyEditingRef.current;
+
+      // 케이스 1: 워크스페이스에서 뒤로가기 시도 (#workspace -> #dashboard)
+      if (vState === 'WORKSPACE' && (currentHash === '#dashboard' || currentHash === '')) {
+        if (isEditing && isDirty) {
+          window.history.pushState({ type: 'WORKSPACE' }, '', '#workspace');
+          setShowExitWarning(true);
+        } else {
+          if (executeExitRef.current) executeExitRef.current(true);
+        }
+      } 
+      // 케이스 2: 대시보드에서 뒤로가기 시도 (#dashboard -> empty)
+      else if (vState === 'DASHBOARD' && !currentHash) {
+        // 차단: 히스토리를 다시 #dashboard로 복구
+        window.history.pushState({ type: 'DASHBOARD' }, '', '#dashboard');
+        setShowAppExitWarning(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isAuthorized]); // 인증 상태 변경 시 리스너 재설정
 
   const handleAuthorize = () => {
     sessionStorage.setItem('mitus_authorized', 'true');
@@ -598,38 +654,8 @@ function App() {
     setDirtyNavigation(null);
   };
 
-  // ─── [신규] 브라우저 뒤로가기 지원 및 이탈 방지 ───
-  useEffect(() => {
-    const handlePopState = async (event) => {
-      if (viewState === 'WORKSPACE') {
-        // 워크스페이스에서 뒤로가기 시 대시보드로 이동
-        executeExit(true);
-      } else if (viewState === 'DASHBOARD') {
-        // 대시보드에서 뒤로가기 시 (앱 종료 시도) 경고 모달 표시
-        if (!event.state || event.state.type !== 'DASHBOARD') {
-          const confirmed = await showConfirm({
-            title: "앱 종료 확인",
-            message: "Mitus-IP-Web을 종료하고 이전 페이지로 돌아가시겠습니까?",
-            type: "warning",
-            confirmText: "종료",
-            cancelText: "유지"
-          });
 
-          if (confirmed) {
-            // 실제로 이전 페이지로 이동
-            window.history.back();
-          } else {
-            // 히스토리를 다시 현재 앱 상태로 복구하여 유지
-            window.history.pushState({ type: 'DASHBOARD' }, '');
-          }
-        }
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [viewState, showConfirm]);
-
-  const openWorkspace = async (projectId, phase) => {
+  const openWorkspace = async (projectId, phase, targetTab = 'Project_Overview', targetIp = null) => {
     const proj = projectsList.find(p => p.id === projectId);
     if (!proj) return;
     
@@ -644,7 +670,9 @@ function App() {
         updated: proj.updated  // dbUpdatedAt으로 탭에 전달되는 핵심 필드
       });
       setCurrentViewedRevision(phase);
-      setActiveTab('Project_Overview');
+      setActiveTab(targetTab);
+      setInitialIpForIpIndex(targetIp);
+      window.history.pushState({ type: 'WORKSPACE' }, '');
       setViewState('WORKSPACE');
       return;
     }
@@ -700,13 +728,14 @@ function App() {
       updated: proj.updated  // dbUpdatedAt으로 탭에 전달되는 핵심 필드
     });
     setCurrentViewedRevision(phase);
-    setActiveTab('Project_Overview');
+    setActiveTab(targetTab);
+    setInitialIpForIpIndex(targetIp);
     isDirtyRef.current = false;
     setIsGloballyEditing(false);
     originalDataSnapshot.current = null;
     
-    // 브라우저 히스토리에 워크스페이스 진입 기록 추가
-    window.history.pushState({ type: 'WORKSPACE', projectId, phase }, '');
+    // 브라우저 히스토리에 워크스페이스 진입 기록 추가 (해시 포함)
+    window.history.pushState({ type: 'WORKSPACE', projectId, phase }, '', '#workspace');
     
     setViewState('WORKSPACE');
   };
@@ -923,31 +952,39 @@ function App() {
   };
 
   const requestBackToDashboard = () => {
-    if (isDirtyRef.current) {
+    // 수동 버튼 클릭 시에는 '편집 모드'이면서 '미저장 데이터'가 있을 때만 경고 모달 표시
+    if (isGloballyEditing && isDirtyRef.current) {
       setShowExitWarning(true);
     } else {
       executeExit();
     }
   };
 
-  const executeExit = async (fromPopState = false) => {
-    if (activeProject && !isDemoMode) {
-      // 본인이 선점한 경우에만 해제 (Read-Only 진입자가 나갈 때 타인의 락을 지우지 않음)
-      const currentMeta = projectsList.find(p => p.id === activeProject.id);
+  const executeExit = useCallback(async (fromPopState = false) => {
+    const curActive = activeProjectRef.current;
+    const curDemo = isDemoModeRef.current;
+    const curProjects = projectsListRef.current;
+
+    if (curActive && !curDemo) {
+      const currentMeta = curProjects.find(p => p.id === curActive.id);
       if (currentMeta?.locked_by === currentUser) {
         await supabase
           .from('projects')
           .update({ is_locked: false, locked_by: null, locked_at: null })
-          .eq('id', activeProject.id);
+          .eq('id', curActive.id);
       }
     }
     
-    // UI 버튼을 통해 나가는 경우 브라우저 히스토리도 뒤로 한 칸 이동
     if (!fromPopState) {
+      // 버튼으로 나가는 경우 히스토리를 한 칸 뒤(#dashboard)로 돌림
       window.history.back();
+    } else {
+      // popstate로 인해 이미 URL이 바뀌어 들어온 경우, 현재 위치를 #dashboard로 명시적 고정
+      window.history.replaceState({ type: 'DASHBOARD' }, '', '#dashboard');
     }
 
     setShowExitWarning(false);
+    setShowAppExitWarning(false);
     setViewState('DASHBOARD');
     setActiveProject(null);
     setProjectData(null);
@@ -955,15 +992,22 @@ function App() {
     setIsGloballyEditing(false);
     isDirtyRef.current = false;
     originalDataSnapshot.current = null;
-  };
+  }, [currentUser]);
+
+  useEffect(() => {
+    executeExitRef.current = executeExit;
+  }, [executeExit]);
 
   const handleExitWithSave = () => {
     executeExit();
   };
 
-  const handleExitWithDiscard = () => {
+  const handleExitWithDiscard = async () => {
     if (originalDataSnapshot.current) {
       const snapToRestore = originalDataSnapshot.current;
+      const curActive = activeProjectRef.current;
+
+      // 1. 로컬 상태 복구
       setProjectData(prev => ({
         ...prev,
         revisions: {
@@ -971,6 +1015,37 @@ function App() {
           [currentViewedRevision]: snapToRestore
         }
       }));
+
+      // 2. 데이터베이스(Supabase) 롤백
+      if (curActive && !isDemoModeRef.current) {
+        try {
+          // 전체 프로젝트 데이터를 가져와서 해당 차수만 스냅샷으로 교체
+          const { data: latestProj } = await supabase
+            .from('projects')
+            .select('project_data')
+            .eq('id', curActive.id)
+            .single();
+
+          if (latestProj) {
+            const updatedData = {
+              ...latestProj.project_data,
+              revisions: {
+                ...latestProj.project_data.revisions,
+                [currentViewedRevision]: snapToRestore
+              }
+            };
+
+            await supabase
+              .from('projects')
+              .update({ project_data: updatedData })
+              .eq('id', curActive.id);
+            
+            console.log('↩️ [Rollback] Database successfully reverted to original snapshot');
+          }
+        } catch (error) {
+          console.error('❌ [Rollback] Failed to revert database:', error);
+        }
+      }
     }
     executeExit();
   };
@@ -1634,14 +1709,14 @@ function App() {
     }
   };
 
-  if (!isAuthorized) {
-    return <AccessGate onAuthorized={handleAuthorize} />;
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100">
-      {isDemoMode && (
-        <div className="bg-amber-500 text-white text-[10px] font-bold py-1 px-4 flex justify-between items-center animate-pulse shadow-md sticky top-0 z-[100]">
+      {!isAuthorized ? (
+        <AccessGate onAuthorized={handleAuthorize} />
+      ) : (
+        <>
+          {isDemoMode && (
+            <div className="bg-amber-500 text-white text-[10px] font-bold py-1 px-4 flex justify-between items-center animate-pulse shadow-md sticky top-0 z-[100]">
           <div className="flex items-center gap-2">
             <AlertCircle size={12} />
             <span>DEMO MODE: DATABASE CONNECTION FAILED. DATA IS BEING SAVED LOCALLY FOR THIS SESSION.</span>
@@ -1848,6 +1923,7 @@ function App() {
                 onEditingStateChange={handleEditingStateChange}
                 onForceUnlock={() => handleForceUnlock(activeProject.id)}
                 globalIpDictionary={globalIpDictionary}
+                selectedIp={initialIpForIpIndex}
               />
             )}
             {activeTab === 'Revision_Log' && (
@@ -1889,11 +1965,13 @@ function App() {
           </div>
         </div>
       )}
+    </>
+  )}
 
       {/* ─── 모달 1: 탭 전환 경고 ─── */}
       {dirtyNavigation && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-md overflow-hidden">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/25 backdrop-blur-[2px] animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="h-1.5 w-full bg-gradient-to-r from-rose-500 to-rose-400" />
             <div className="p-6">
               <div className="flex items-start gap-4 mb-4">
@@ -1904,9 +1982,9 @@ function App() {
                 </div>
               </div>
               <p className="text-sm text-slate-600 leading-relaxed mb-6 font-medium">현재 탭에 <strong className="text-rose-600">저장되지 않은 수정 사항</strong>이 있습니다. <br/>저장하지 않고 이동하시겠습니까?</p>
-              <div className="flex gap-3 justify-end mt-4 pt-4 border-t border-slate-100">
-                <button onClick={() => setDirtyNavigation(null)} className="px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors">취소 / 머무르기</button>
-                <button onClick={performRollbackAndNavigate} className="px-4 py-2.5 text-sm font-bold rounded-xl bg-rose-500 hover:bg-rose-600 text-white shadow-sm transition-colors">저장하지 않고 이동</button>
+              <div className="flex gap-4 justify-center mt-4 pt-4 border-t border-slate-50">
+                <button onClick={() => setDirtyNavigation(null)} className="text-slate-400 hover:text-indigo-600 text-[13px] font-bold transition-colors">아니요, 머무를게요</button>
+                <button onClick={performRollbackAndNavigate} className="text-slate-400 hover:text-slate-700 text-[13px] font-bold transition-colors">저장하지 않고 이동</button>
               </div>
             </div>
           </div>
@@ -1915,17 +1993,24 @@ function App() {
 
       {/* ─── 모달 2: 나가기 (Save & Exit) 경고 ─── */}
       {showExitWarning && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center space-y-6">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/25 backdrop-blur-[2px] animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center space-y-6 border border-white/20 animate-in zoom-in-95 duration-300">
             <div className="mx-auto w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center text-3xl shadow-inner my-2">⚠️</div>
             <div>
               <h2 className="text-xl font-extrabold text-slate-800 mb-2">저장되지 않은 변경사항</h2>
               <p className="text-sm text-slate-500 font-medium">편집 중인 내용이 <strong>완료(Save 처리)되지 않았습니다.</strong></p>
             </div>
-            <div className="flex flex-col gap-2">
-              <button onClick={handleExitWithSave} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl">임시저장 상태로 나가기</button>
-              <button onClick={handleExitWithDiscard} className="w-full bg-slate-100 hover:bg-red-50 text-red-600 font-bold py-2.5 rounded-xl border border-transparent hover:border-red-200">편집 내용 취소하고 나가기</button>
-              <button onClick={() => setShowExitWarning(false)} className="w-full text-slate-500 hover:text-slate-700 font-semibold py-2 rounded-xl">워크스페이스로 돌아가기</button>
+            <div className="flex flex-col gap-1.5 pt-2">
+              <button onClick={handleExitWithSave} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-100 text-[13px]">
+                변경사항 적용하고 나가기
+              </button>
+              <button onClick={handleExitWithDiscard} className="w-full text-slate-400 hover:text-slate-600 font-bold py-2.5 text-[12px] transition-colors">
+                변경사항 취소하고 나가기
+              </button>
+              <div className="h-[1px] w-8 bg-slate-100 mx-auto my-1"></div>
+              <button onClick={() => setShowExitWarning(false)} className="w-full text-indigo-500 hover:text-indigo-700 font-black py-2 text-[12px] transition-colors">
+                워크스페이스로 돌아가기
+              </button>
             </div>
           </div>
         </div>
@@ -1937,6 +2022,37 @@ function App() {
         checklist={lockChecklist}
         onConfirm={handleFinalConfirmLock}
       />
+
+      {/* ─── 모달 3: 대시보드에서 앱 종료 확인 ─── */}
+      {showAppExitWarning && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/25 backdrop-blur-[2px] animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-8 text-center space-y-6 border border-white/20 animate-in zoom-in-95 duration-300">
+            <div className="mx-auto w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-3xl shadow-inner my-2">🚪</div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-800 mb-2">서비스 종료 확인</h2>
+              <p className="text-sm text-slate-500 font-medium">정말 mitus-ip-web을 <strong>종료하시겠습니까?</strong></p>
+            </div>
+            <div className="flex flex-col gap-1.5 pt-2">
+              <button 
+                onClick={() => setShowAppExitWarning(false)} 
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-100 text-[13px]"
+              >
+                아니요, 더 머무를게요
+              </button>
+              <button 
+                onClick={() => {
+                  isExitingAppRef.current = true;
+                  setShowAppExitWarning(false);
+                  window.history.go(-2); 
+                }} 
+                className="w-full text-slate-400 hover:text-slate-600 font-bold py-2.5 text-[12px] transition-colors"
+              >
+                네, 종료합니다
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

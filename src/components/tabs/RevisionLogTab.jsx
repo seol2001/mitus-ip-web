@@ -74,8 +74,8 @@ export default function RevisionLogTab({ data, overviewData, ipIndexData, curren
   });
   const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
 
-const makeDefaultForm = (ip) => ({
-  ipBlock: ip, subBlock: null, entryMode: 'new', issueNum: '', types: ['Initial'], severity: 'Minor',
+const makeDefaultForm = (ip, issueNum = '') => ({
+  ipBlock: ip, subBlock: null, entryMode: 'new', issueNum, types: ['Initial'], severity: 'Minor',
   phenomenon: '', rootCause: '', disposition: 'Revision', justification: '', modPlan: '',
   verificationGap: '', gapComment: '',
   customerAlignment: 'Internal Only', customerReportType: 'N/A', sanitizedStory: '',
@@ -83,7 +83,7 @@ const makeDefaultForm = (ip) => ({
   origin: '', escapeReason: '', sideEffectSource: ''
 });
 
-  const [formData, setFormData] = useState(makeDefaultForm(currentSelectedIp, stage));
+  const [formData, setFormData] = useState(makeDefaultForm(currentSelectedIp));
   const showConfirm = useConfirm();
   // expandedHistoryItems → IssueCard 내부 상태로 이전됨
   const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
@@ -129,12 +129,6 @@ const makeDefaultForm = (ip) => ({
   const [originSelVal, setOriginSelVal] = useState('');
   const [sideSelVal, setSideSelVal] = useState('');
 
-  useEffect(() => {
-    // IP 탭 선택 변경 시: 편집 중이 아니고 new 모드일 때만 ipBlock 업데이트
-    if (!editingId && mode === 'new') {
-      setFormData(prev => ({ ...prev, ipBlock: currentSelectedIp }));
-    }
-  }, [currentSelectedIp, editingId, mode]);
 
   // ── pendingFaPullDataRef: handlePullFa에서 직접 setFormData를 호출하므로 이 effect는 불필요
   useEffect(() => {
@@ -157,6 +151,29 @@ const makeDefaultForm = (ip) => ({
     });
     return s;
   }, [historyBlocks, issues, project]);
+
+  const calcNextNum = useCallback((ip) => {
+    let max = 0;
+    const chk = (id) => { if (!id) return; const pts = id.split('.'); if (pts[0] === ip) { const m = id.match(/#(\d+)/); if (m) { const n = parseInt(m[1]); if (n > max) max = n; } } };
+    Object.keys(latestIssueStates).forEach(id => chk(id));
+    return `ISSUE#${max + 1}`;
+  }, [latestIssueStates]);
+
+  useEffect(() => {
+    // IP 탭 선택 변경 시: 편집 중이 아니고 new 모드일 때만 ipBlock 및 issueNum 업데이트
+    if (!editingId && mode === 'new') {
+      setFormData(prev => {
+        const nextNum = calcNextNum(currentSelectedIp);
+        // 이미 해당 IP의 번호가 채워져 있다면 유지, 아니면 새 번호 채번
+        const shouldUpdate = prev.ipBlock !== currentSelectedIp || !prev.issueNum;
+        return { 
+          ...prev, 
+          ipBlock: currentSelectedIp,
+          issueNum: shouldUpdate ? nextNum : prev.issueNum
+        };
+      });
+    }
+  }, [currentSelectedIp, editingId, mode, calcNextNum]);
 
   const stats = useMemo(() => {
     let total = 0, open = 0, closed = 0, deferred = 0;
@@ -254,12 +271,6 @@ const makeDefaultForm = (ip) => ({
     return list;
   };
 
-  const calcNextNum = (ip) => {
-    let max = 0;
-    const chk = (id) => { if (!id) return; const pts = id.split('.'); if (pts[0] === ip) { const m = id.match(/#(\d+)/); if (m) { const n = parseInt(m[1]); if (n > max) max = n; } } };
-    Object.keys(latestIssueStates).forEach(id => chk(id));
-    return `ISSUE#${max + 1}`;
-  };
 
   const curStageNums = useMemo(() => {
     return issues.filter(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock).map(i => i.issueNum).sort((a,b)=>a.localeCompare(b));
@@ -407,7 +418,7 @@ const makeDefaultForm = (ip) => ({
 
     // 폼 초기화: mode 변경 없이 직접 초기화하여 useEffect 트리거 방지
     setEditingId(null);
-    setFormData(makeDefaultForm(currentIp));
+    setFormData(makeDefaultForm(currentIp, calcNextNum(currentIp)));
     // mode는 'fa' 저장 후 'new'로 복구 (단, useEffect가 폼을 다시 초기화하지 않도록
     // makeDefaultForm을 먼저 호출한 뒤 mode를 변경)
     if (mode === 'fa') {
@@ -418,7 +429,7 @@ const makeDefaultForm = (ip) => ({
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData(makeDefaultForm(currentSelectedIp));
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
   };
 
   const availableDispositions = stage === 'EVT0' && mode === 'new'
@@ -484,7 +495,7 @@ const makeDefaultForm = (ip) => ({
     // 명시적 탭 전환: 폼 초기화 → mode 변경
     setEditingId(null);
     setSelectedFaForPull(null);
-    setFormData(makeDefaultForm(currentSelectedIp));
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
     setMode(newMode);
     // FA 탭 진입 시 편집 모드 자동 활성화 (isReadOnly 차단 방지)
     if (newMode === 'fa' && !isTabEditing) {
@@ -573,7 +584,7 @@ const makeDefaultForm = (ip) => ({
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
     setEditingId(null);
-    setFormData(makeDefaultForm(currentSelectedIp));
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
   };
 
   return (
