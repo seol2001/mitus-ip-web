@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import {
   FileSearch, AlertCircle, Edit2, Trash2, CheckCircle, Plus, X,
   Link, AlertTriangle, ShieldCheck, GitBranch, User, Building2, Lock,
@@ -56,19 +56,23 @@ const makeDefault = (ipBlock = '', currentRevision = '') => ({
   isLinkedToLog: false,
 });
 
-export default function FaReportTab({
+const FaReportTab = forwardRef(({
   data,
   overviewData,
   currentRevision,
   isArchived,
-  onSubmit,
-  onEditingStateChange,
-  onForceUnlock,
+  lockReason,
   projectId,
   dbUpdatedAt,
-  lockReason,
+  onSubmit,
+  onImmediateUpdate,
+  onRevisionLogUpdate,
+  onFormDirtyChange,
+  onEditingStateChange,
+  onForceUnlock,
+  revisionLogData,
   ipIndexData
-}) {
+}, ref) => {
   const faReports = useMemo(() => data?.faReports || [], [data]);
   const ipBlocks = useMemo(
     () => overviewData?.IP_Blocks || [],
@@ -92,9 +96,30 @@ export default function FaReportTab({
     linked: false
   });
 
-  // ── 탭 로컴 편집 상태 (ProjectOverviewTab 표준 패턴) ──
+  // [추가] 외부(App.jsx)에서 상태를 리셋할 수 있는 기능 노출
+  useImperativeHandle(ref, () => ({
+    canNavigate: async () => {
+      // FA Report도 현재는 별도의 Dirty 가드가 필요 없으나 일관성을 위해 추가
+      return true;
+    },
+    resetForm: () => {
+      setEditingId(null);
+      setFormData(makeDefault(ipBlocks[0] || '', currentRevision));
+      setIsTabEditing(false);
+    }
+  }), [ipBlocks, currentRevision]);
+
+  // ── 탭 로컬 편집 상태: 초기 잠금 상태로 시작 (사용자 요청) ──
   const [isTabEditing, setIsTabEditing] = useState(false);
   const isReadOnly = isArchived || !isTabEditing;
+
+  useEffect(() => {
+    // 프로젝트 전체 잠금 상태가 바뀌면 탭 로컬 편집 상태도 동기화
+    // [수정] 자동 잠금 해제 로직 제거, 강제 잠금 로직만 유지
+    if (isArchived === true) {
+      setIsTabEditing(false);
+    }
+  }, [isArchived]);
 
   useEffect(() => {
     if (onEditingStateChange) onEditingStateChange(isTabEditing);
@@ -135,6 +160,7 @@ export default function FaReportTab({
       }
       return next;
     });
+    if (onFormDirtyChange) onFormDirtyChange(true);
   };
 
   // ── 저장 ─────────────────────────────────────────────────────────
@@ -148,7 +174,6 @@ export default function FaReportTab({
       updated = [...faReports, { ...formData, faId }];
     }
     const newData = { ...data, faReports: updated };
-    if (onImmediateUpdate) onImmediateUpdate(newData);
     if (onSubmit) onSubmit(newData);
     resetForm();
   };
@@ -174,7 +199,6 @@ export default function FaReportTab({
     if (confirmed) {
       const updated = faReports.filter(f => f.faId !== fa.faId);
       const newData = { ...data, faReports: updated };
-      if (onImmediateUpdate) onImmediateUpdate(newData);
       if (onSubmit) onSubmit(newData);
       if (editingId === fa.faId) resetForm();
     }
@@ -607,4 +631,6 @@ export default function FaReportTab({
       {/* MODALS SECTION */}
     </div>
   );
-}
+});
+
+export default FaReportTab;

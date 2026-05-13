@@ -1,0 +1,24 @@
+{
+  "app": "Mitus-IP-Web",
+  "exportedAt": "2026-05-13T00:00:00.000Z",
+  "project": {
+    "id": "SM5718",
+    "name": "SM5718 (Demo Mode)",
+    "latest_evt": "EVT1",
+    "phases": ["EVT1"],
+    "updated": "2026-05-13T00:00:00.000Z",
+    "is_locked": false,
+    "project_data": {
+      "projectId": "SM5718",
+      "revisions": {
+        "EVT1": {
+          "status": "draft",
+          "projectOverview": { "Project_Name": "SM5718", "Owner": "Bug1_Test" },
+          "ipIndex": {},
+          "revisionLog": { "initialMode": "new", "loadedIssues": [], "historyBlocks": [], "issues": [] },
+          "faReport": { "faReports": [] }
+        }
+      }
+    }
+  }
+}

@@ -4,32 +4,44 @@
 - 너는 React, Vite, Tailwind CSS 기반의 프론트엔드 아키텍트이자 시니어 개발자이다.
 - 코드를 작성하기 전에 항상 이 문서의 규칙을 최우선으로 검토하고, 아키텍처의 무결성을 깨뜨리는 코드는 절대 작성하지 않는다.
 
-## 2. Core Architecture & Data Flow
-본 프로젝트는 철저한 **'단방향 데이터 흐름(Top-Down Props, Bottom-Up Events)'**을 따른다.
+## 2. Core Architecture & Data Flow (Unit C: Context-Driven)
+본 프로젝트는 **Context API 기반의 중앙 집중형 상태 관리** 체계를 따른다.
 
-* **관제탑 (App.jsx):** 모든 상태(State)와 데이터 구조는 오직 `App.jsx`에서만 관리한다.
-* **하위 모듈 (Tabs):** 각 탭(`ProjectOverviewTab`, `IpIndexTab` 등)은 자체적인 전역 상태를 갖지 않으며, 반드시 부모로부터 Props를 받아 렌더링한다.
-* **통신 포트 규칙:** 하위 탭 컴포넌트는 반드시 다음 4가지 Props를 수용해야 한다.
-  1. `data`: 해당 탭에 렌더링할 JSON 데이터 객체
-  2. `isArchived` (boolean): `true`일 경우 모든 입력 UI(Input, Button 등)를 `disabled` 또는 `readonly`로 강제 잠금 처리
-  3. `onImmediateUpdate` (function): 실시간 입력 변경 시 호출 (디바운스 적용 권장)
-  4. `onSubmit` (function): 해당 탭의 초안 작업이 완료되어 확정(Lock)할 때 부모에게 제출하는 콜백
+*   **Global Contexts:** 
+    *   `ProjectContext`: 프로젝트 데이터, 차수(Revision), 잠금(Lock) 상태 등 핵심 비즈니스 로직 관리.
+    *   `UIContext`: (진행 중) 폼 더티 체크, 임시 UI 상태, 알림 등 비즈니스 로직과 분리된 UI 상태 관리.
+*   **Decoupled Components:** 하위 컴포넌트(Tabs 등)는 더 이상 Props로 방대한 데이터를 받지 않으며, `useProject()` 훅을 사용하여 필요한 상태를 직접 구독한다.
+*   **Single Source of Truth:** `App.jsx`는 최상위 오케스트레이션(Real-time Fetch, Auth)을 담당하고, 실제 데이터 접근 권한은 Context가 가진다.
 
-## 3. Data Structure & Persistence
-* 데이터는 향후 Python 백엔드 연동을 고려하여 `[프로젝트ID] -> [차수(Revision)] -> [탭 데이터]` 형태의 중첩 JSON 스키마를 엄격히 유지한다.
-* 현재 단계에서는 `mockData.js`의 구조를 따르며, 상태의 영속성은 브라우저의 `localStorage`를 통해 관리한다.
+## 3. Data Structure & Persistence (Unit A & B: Optimized)
+*   **Normalized Data:** `[프로젝트ID] -> [차수] -> [탭]` 스키마를 엄격히 준수하며, `useMemo`를 통한 파생 데이터(`currentData`) 활용으로 성능을 최적화한다.
+*   **Persistence:** Supabase Real-time 연동을 기본으로 하되, Local Cache 및 최적화된 DB Commit 전략을 유지한다.
 
-## 4. Revision Lifecycle (차수 관리 원칙)
-이 시스템은 하드웨어 설계의 차수(EVT0, EVT1, EVT2...) 관리 시스템이다. 데이터의 정합성을 위해 다음을 준수한다.
-* **과거 차수 보호:** 최신 차수가 아닌 이전 차수를 열람할 경우, 무조건 `isArchived=true`를 적용하여 데이터 변조를 원천 차단한다.
-* **차수 파생 방지:** 새로운 차수 생성은 오직 '가장 최신 차수' 상태에서만 가능하다.
+## 4. AI Collaboration Methodology (MLX-QWEN & bkit)
+프로젝트의 안정적 확장을 위해 AI 도구 활용 원칙을 준수한다.
 
-## 5. Coding Style & Tech Stack
-* **Framework:** Vite + React 19 (Functional Components & Hooks)
-* **Styling:** Tailwind CSS (인라인 스타일 금지, 복잡한 CSS는 utility class 활용)
-* **Icons:** `lucide-react` 라이브러리 사용 (별도 이미지 에셋 사용 지양)
-* **UI/UX:** 컴포넌트를 분리할 때 기존 HTML의 시각적 레이아웃과 퀄리티를 100% 동일하게 재현한다.
+*   **bkit 활용 (PDCA Workflow):**
+    *   모든 작업은 `bkit`을 통한 **Plan -> Design -> Do -> Check -> Act** 단계를 거친다.
+    *   코드 수정 전 반드시 `bkit_pre_write_check`를 실행하여 아키텍처 적합성을 확인한다.
+    *   수정 후에는 `bkit_pdca_analyze`로 설계 문서와의 일치율을 검증한다.
+*   **MLX-QWEN 활용 (Local Inference):**
+    *   고성능 추론이 필요한 복잡한 로직 설계나 코드 리뷰 시 `MLX-QWEN` 모델을 적극 활용한다.
+    *   로컬 자원을 효율적으로 사용하기 위해 `mlx-qwen_ask_mlx` 도구를 사용하여 답변의 정합성을 높인다.
 
+## 5. MLX-QWEN Prompting Rules (핵심 원칙)
+MLX-QWEN 모델을 통해 최적의 결과를 얻기 위해 다음 프롬프트 규칙을 엄격히 적용한다.
 
-## 6. Code 수정
-* 내가 명시적으로 코드를 수정해달라고 명령을 하기 전까지 알아서 수정을 진행하는 것은 금지야.
+1.  **Role-Based:** "너는 시니어 React 아키텍트이다"와 같이 명확한 페르소나를 부여한다.
+2.  **Context-First:** 수정하려는 파일의 전체 컨텍스트와 관련 Context API 정의를 먼저 주입한다.
+3.  **No-Pixel-Change:** UI 수정 시 "기존 레이아웃과 픽셀 단위까지 동일하게 유지하라"는 제약을 명시한다.
+4.  **Step-by-Step:** 복잡한 리팩토링은 "단계별(Step-by-Step) 계획을 먼저 수립하고 내 승인을 받아라"고 지시한다.
+5.  **Strict Logic:** "임의의 변수 선언 금지", "기존 API 인터페이스 유지" 등 기술적 제약을 명확히 전달한다.
+
+## 6. Revision Lifecycle & Coding Style
+*   **차수 보호:** 과거 차수(isLatest=false)는 무조건 `isArchived=true`로 처리한다.
+*   **Tech Stack:** React 19, Vite, Tailwind CSS, lucide-react.
+*   **No Placeholders:** 실무에서 사용하는 실제 로직과 데이터를 사용하며, `generate_image` 등을 통해 시각적 완성도를 높인다.
+
+## 7. Code 수정 및 진행 원칙
+*   사용자의 명시적 승인 없이 코드를 알아서 대량 수정하는 것을 금지한다.
+*   수정 전 항상 `implementation_plan.md`를 업데이트하여 사용자 피드백을 우선 수렴한다.

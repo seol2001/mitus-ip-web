@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { ipCategoryNameMap, makeDefaultIpIndex } from '../../data/mockData';
 import { X } from '../Icons';
 import ActionBar from '../ActionBar';
-import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
+import IssueSummaryCard from '../IssueSummaryCard';
 import { BookOpen, Lock, Copy, Plus, Trash2 } from 'lucide-react';
 import { DEFAULT_IP_CONTENTS_SCHEMA } from '../../data/schemaConfig';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { getIssueStatus } from '../../logic/revisionLogLogic';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
@@ -32,8 +33,19 @@ const SortableField = ({ id, isEditing, className, children }) => {
   );
 };
 
-const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onEditingStateChange, onForceUnlock, globalIpDictionary, selectedIp }) => {
-  const [unlockedOverview, setUnlockedOverview] = useState(false);
+const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onFormDirtyChange, onEditingStateChange, onForceUnlock, globalIpDictionary, selectedIp }, ref) => {
+  const safeData = data || {};
+  // [수정] 모든 탭 초기 잠금 상태로 시작 (사용자 요청)
+  const [isTabEditing, setIsTabEditing] = useState(false);
+
+  // [추가] 외부(App.jsx)에서 상태를 리셋할 수 있는 기능 노출
+  useImperativeHandle(ref, () => ({
+    canNavigate: async () => true, // IpIndex는 현재 별도의 Dirty 가드가 필요 없음
+    resetForm: () => {
+      setIsTabEditing(false);
+    }
+  }));
+
   const dictToUse = globalIpDictionary || ipCategoryNameMap;
   const [selectedIpForIndex, setSelectedIpForIndex] = useState(null);
   
@@ -42,22 +54,20 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   const [ipContentsSchema, setIpContentsSchema] = useState([]); // 🚀 컨텐츠 카드 스키마 상태 추가
 
   useEffect(() => {
-    if (onEditingStateChange) onEditingStateChange(unlockedOverview);
-  }, [unlockedOverview, onEditingStateChange]);
-
-  const safeData = data || {};
+    if (onEditingStateChange) onEditingStateChange(isTabEditing);
+  }, [isTabEditing, onEditingStateChange]);
 
   // ─── 지능형 Auto-Save ───
   const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
     projectId,
     tabName: 'IP_Index',
     data: safeData,
-    isEditing: unlockedOverview,
+    isEditing: isTabEditing,
     onRestore: (recoveredData) => {
       if (onImmediateUpdate) onImmediateUpdate(recoveredData, true);
     },
     dbUpdatedAt,
-    setIsEditing: setUnlockedOverview
+    setIsEditing: setIsTabEditing
   });
   const safeOverview = overviewData || { IP_Blocks: [], Project_Name: '', Foundry: '', Process: '' };
   
@@ -71,7 +81,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
     }
   }, [safeOverview.IP_Blocks, selectedIpForIndex, selectedIp]);
 
-  const isOverviewDisabled = isArchived || !unlockedOverview;
+  const isOverviewDisabled = isArchived || !isTabEditing;
 
   const currentIpData = selectedIpForIndex && safeData[selectedIpForIndex] 
     ? safeData[selectedIpForIndex] 
@@ -204,6 +214,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
     if (!selectedIpForIndex) return;
     const newData = { ...safeData, [selectedIpForIndex]: { ...currentIpData, ...patch } };
     if (onImmediateUpdate) onImmediateUpdate(newData);
+    if (onFormDirtyChange) onFormDirtyChange(true);
   };
 
   const handleAddSubBlock = () => {
@@ -234,7 +245,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
   const handleSubmit = () => {
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'IP_Index');
-    setUnlockedOverview(false);
+    setIsTabEditing(false);
   };
 
   const renderSectionHeader = (title) => (
@@ -284,8 +295,8 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
           <div className="shrink-0 border-l pl-3 border-slate-200">
             <ActionBar 
               isGlobalArchived={isArchived} 
-              isEditing={unlockedOverview} 
-              onEdit={() => setUnlockedOverview(true)} 
+              isEditing={isTabEditing} 
+              onEdit={() => setIsTabEditing(true)} 
               onLock={handleSubmit} 
               lockReason={lockReason}
               onForceUnlock={onForceUnlock}
@@ -474,12 +485,12 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                     {keySpecSchema.map((field) => {
                       const isCustomKey = !Object.keys(currentIpData.Key_Spec || {}).includes(field.id) || field.id.startsWith('KeySpec_');
                       return (
-                      <SortableField key={field.id} id={field.id} isEditing={unlockedOverview} className="flex items-stretch border-b border-slate-100 last:border-0 hover:bg-slate-50 group">
+                      <SortableField key={field.id} id={field.id} isEditing={isTabEditing} className="flex items-stretch border-b border-slate-100 last:border-0 hover:bg-slate-50 group">
                         {(dragListeners, dragAttributes) => (
                             <div className="flex w-full items-stretch min-h-[44px]">
                               <div className="px-2 py-2 w-1/3 border-r border-slate-200 text-xs font-mono text-slate-600 bg-slate-50/50 flex items-center shrink-0 gap-1">
-                                {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1" {...dragListeners} {...dragAttributes}>⠿</div>}
-                                {unlockedOverview && isCustomKey ? (
+                                {isTabEditing && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1" {...dragListeners} {...dragAttributes}>⠿</div>}
+                                {isTabEditing && isCustomKey ? (
                                   <input type="text" value={field.label} onChange={(e) => handleKeySpecLabelChange(field.id, e.target.value)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-amber-400 font-bold text-slate-700" placeholder="Parameter Key" />
                                 ) : (
                                   <span className="px-2">{field.label}</span>
@@ -487,7 +498,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                               </div>
                               <div className="flex-1 p-0 flex items-center relative">
                                 <input type="text" value={currentIpData.Key_Spec?.[field.id] || ''} onChange={(e) => handleIpKeySpecChange(field.id, e.target.value)} className={`w-full px-4 py-2 bg-transparent outline-none focus:bg-blue-50 font-mono text-xs text-blue-900 transition-colors placeholder:text-slate-300 ${isOverviewDisabled ? 'text-slate-400 cursor-not-allowed' : ''}`} disabled={isOverviewDisabled} placeholder="Input value..." />
-                                {unlockedOverview && isCustomKey && (
+                                {isTabEditing && isCustomKey && (
                                   <button onClick={() => handleKeySpecDelete(field.id)} className="absolute right-2 text-slate-300 hover:text-red-500 transition-colors p-1"><X size={14} /></button>
                                 )}
                               </div>
@@ -496,7 +507,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                       </SortableField>
                       );
                     })}
-                    {unlockedOverview && <div className="p-2 bg-slate-50/50 border-t border-slate-200"><button onClick={handleKeySpecAdd} className="w-full py-2.5 border-2 border-dashed border-amber-200 rounded-lg text-amber-600 font-bold text-xs hover:bg-amber-50 hover:border-amber-400 transition-colors flex items-center justify-center gap-1">➕ 새 파라미터 추가</button></div>}
+                    {isTabEditing && <div className="p-2 bg-slate-50/50 border-t border-slate-200"><button onClick={handleKeySpecAdd} className="w-full py-2.5 border-2 border-dashed border-amber-200 rounded-lg text-amber-600 font-bold text-xs hover:bg-amber-50 hover:border-amber-400 transition-colors flex items-center justify-center gap-1">➕ 새 파라미터 추가</button></div>}
                   </div>
                 </SortableContext>
               </DndContext>
@@ -509,13 +520,13 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                   {ipContentsSchema.map((field, index) => {
                     const isCustomContents = field.type === 'custom';
                     return (
-                    <SortableField key={field.id} id={field.id} isEditing={unlockedOverview} className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
+                    <SortableField key={field.id} id={field.id} isEditing={isTabEditing} className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
                       {(dragListeners, dragAttributes) => (
                         <>
                           <div className="flex justify-between items-center border-b border-slate-100 pb-3 gap-2">
                             <div className="flex items-center gap-2 flex-1">
-                              {unlockedOverview && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1 font-bold w-6 text-center" title="드래그하여 이동" {...dragListeners} {...dragAttributes}>⠿</div>}
-                              {unlockedOverview && isCustomContents ? (
+                              {isTabEditing && <div className="cursor-grab text-slate-300 hover:text-amber-500 px-1 font-bold w-6 text-center" title="드래그하여 이동" {...dragListeners} {...dragAttributes}>⠿</div>}
+                              {isTabEditing && isCustomContents ? (
                                 <div className="flex items-center gap-2 w-full max-w-md">
                                   <span className="text-lg font-extrabold text-slate-800">{index + 1}.</span>
                                   <input type="text" value={field.label} onChange={(e) => handleIpContentsLabelChange(field.id, e.target.value)} className="flex-1 border border-slate-200 rounded-lg px-3 py-1 text-sm font-bold text-slate-800 bg-white outline-none focus:border-amber-400" placeholder="섹션 제목" />
@@ -527,7 +538,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                             
                             <div className="flex items-center gap-2">
                               {isOverviewDisabled && <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200">Locked</span>}
-                              {unlockedOverview && isCustomContents && (
+                              {isTabEditing && isCustomContents && (
                                 <button onClick={() => handleIpContentsDelete(field.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><X size={18} /></button>
                               )}
                             </div>
@@ -553,7 +564,7 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
                     </SortableField>
                     );
                   })}
-                  {unlockedOverview && (
+                  {isTabEditing && (
                     <button onClick={handleIpContentsAdd} className="w-full py-4 mt-2 border-2 border-dashed border-amber-200 rounded-xl text-amber-600 font-bold text-sm hover:bg-amber-50 hover:border-amber-400 transition-colors flex items-center justify-center gap-2">➕ 새 컨텐츠 카드 추가</button>
                   )}
                   </div>
@@ -655,6 +666,6 @@ const IpIndexTab = ({ data, overviewData, revisionLogData, currentRevision, isAr
       )}
     </div>
   );
-};
+});
 
 export default IpIndexTab;

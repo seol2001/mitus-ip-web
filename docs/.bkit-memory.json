@@ -1,0 +1,206 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-05-07T06:22:36.104Z",
+  "data": {
+    "workspace-view-props-analysis": {
+      "dataProps": [
+        "activeProject",
+        "projectData",
+        "currentData",
+        "currentUser",
+        "isDirtyRef (Ref)",
+        "isArchived",
+        "isSessionLockedByOther",
+        "currentProjMeta",
+        "lockDetail",
+        "tabs (Constants)",
+        "activeTab",
+        "currentViewedRevision",
+        "lockReason",
+        "globalIpDictionary",
+        "initialIpForIpIndex",
+        "tabRef (Ref)"
+      ],
+      "handlerProps": [
+        "requestBackToDashboard",
+        "handleGlobalLock",
+        "handleGlobalUnlock",
+        "handleSaveMD",
+        "handleGenerateNextRevision",
+        "handleDebugRollback",
+        "handleTabClick",
+        "handleTabSubmit",
+        "handleEditingStateChange",
+        "handleForceUnlock",
+        "handleAddCustomIp",
+        "handleFormDirtyChange",
+        "showConfirm"
+      ],
+      "uiDependencies": [
+        "ArrowLeft",
+        "LockIcon",
+        "Download",
+        "ChevronsRight",
+        "ProjectOverviewTab",
+        "IpIndexTab",
+        "RevisionLogTab",
+        "FaReportTab"
+      ]
+    },
+    "bugfix-sync-issue-analysis": {
+      "affectedFiles": [
+        "App.jsx"
+      ],
+      "cause": "Stale Closure in async handler",
+      "solution": "Extend handleGenerateNextRevision to accept optional forcedData and pass updatedProjectData directly from the lock handler."
+    },
+    "dashboard-modularization-props-v1": {
+      "ProjectCard": [
+        {
+          "description": "프로젝트 상세 정보 객체 (id, name, updated, is_locked, locked_by, is_archived, phases, latest_evt 포함)",
+          "name": "project",
+          "type": "ProjectType"
+        },
+        {
+          "description": "현재 로그인한 사용자 정보 (잠금 상태 판별용)",
+          "name": "currentUser",
+          "type": "UserType"
+        },
+        {
+          "description": "참조 프로젝트 ID (뱃지 표시용)",
+          "name": "referenceProjectId",
+          "type": "string | null"
+        },
+        {
+          "description": "설정 메뉴 열림 상태 ID",
+          "name": "openSettingsId",
+          "type": "string | null"
+        },
+        {
+          "description": "설정 메뉴 상태 변경 함수",
+          "name": "setOpenSettingsId",
+          "type": "Dispatch<SetStateAction<string | null>>"
+        },
+        {
+          "description": "차수 드롭다운 열림 상태 ID",
+          "name": "openDropdownId",
+          "type": "string | null"
+        },
+        {
+          "description": "차수 드롭다운 상태 변경 함수",
+          "name": "setOpenDropdownId",
+          "type": "Dispatch<SetStateAction<string | null>>"
+        },
+        {
+          "description": "프로젝트 내보내기 핸들러",
+          "name": "onExport",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "프로젝트 관리 핸들러",
+          "name": "onManage",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "아카이브 토글 핸들러",
+          "name": "onToggleArchive",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "참조 초기화 핸들러",
+          "name": "onResetReference",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "삭제 모달 열기 핸들러",
+          "name": "onDelete",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "잠금 해제 모달 열기 핸들러",
+          "name": "onUnlock",
+          "type": "(project: ProjectType) => void"
+        },
+        {
+          "description": "워크스페이스 열기 핸들러",
+          "name": "onOpenWorkspace",
+          "type": "(project: ProjectType, phase?: PhaseType) => void"
+        }
+      ]
+    },
+    "workspace_fragmentation_props": {
+      "WorkspaceContent": {
+        "data": [
+          "activeTab: string",
+          "tabRef: React.RefObject",
+          "currentData: object",
+          "activeProject: object",
+          "currentViewedRevision: string",
+          "isArchived: boolean",
+          "lockReason: string",
+          "globalIpDictionary: object",
+          "initialIpForIpIndex: string/null"
+        ],
+        "handlers": [
+          "handleTabSubmit: function",
+          "handleEditingStateChange: function",
+          "handleForceUnlock: function",
+          "handleAddCustomIp: function",
+          "handleFormDirtyChange: function"
+        ]
+      },
+      "WorkspaceHeader": {
+        "data": [
+          "activeProject: object",
+          "currentViewedRevision: string",
+          "isDirtyRef: React.RefObject",
+          "isArchived: boolean",
+          "isSessionLockedByOther: boolean",
+          "currentProjMeta: object",
+          "lockDetail: object"
+        ],
+        "handlers": [
+          "requestBackToDashboard: function",
+          "handleGlobalLock: function",
+          "handleGlobalUnlock: function",
+          "handleSaveMD: function",
+          "handleGenerateNextRevision: function",
+          "handleDebugRollback: function",
+          "handleForceUnlock: function",
+          "showConfirm: function"
+        ]
+      },
+      "WorkspaceTabs": {
+        "data": [
+          "tabs: string[]",
+          "activeTab: string"
+        ],
+        "handlers": [
+          "handleTabClick: function"
+        ]
+      }
+    },
+    "bug-1-analysis": {
+      "analysis": "isDirtyRef.current는 폼 데이터가 존재하거나 변경되었을 때 true로 설정되지만, handleTabSwitch와 handleIpChange의 경고 모달 조건(isDirtyRef.current && !editingId)에 isTabEditing 상태 체크가 누락되어 있습니다. 초기 데이터 로드 시 checkIfDirty가 true를 반환하거나, 읽기 전용 모드에서도 isDirtyRef가 true로 유지되면, 사용자가 실제로 수정 작업을 하지 않았음에도(isTabEditing === false) 탭 전환이나 IP 변경 시 '작성 취소' 경고 모달이 불필요하게 표시됩니다. 즉, '데이터 존재 여부'와 '실제 수정 모드 활성화 여부'를 구분하지 못한 것이 근본 원인입니다.",
+      "fix_plan": [
+        "handleTabSwitch 및 handleIpChange 함수 내의 경고 모달 조건에 isTabEditing을 명시적으로 추가하여, 수정 모드일 때만 경고창이 나타나도록 조건을 강화합니다. (변경 전: if (isDirtyRef.current && !editingId), 변경 후: if (isTabEditing && isDirtyRef.current && !editingId))",
+        "handleIpChange의 useCallback 의존성 배열에 isTabEditing을 추가하여 최신 상태를 정확히 반영합니다.",
+        "isTabEditing이 false로 변경될 때 isDirtyRef.current를 false로 초기화하는 useEffect를 추가하여, 읽기 전용 모드 진입 시 디티 상태가 누수되는 것을 근본적으로 차단합니다."
+      ]
+    },
+    "bug-2-analysis": {
+      "analysis": "editingId가 null로 초기화되므로 currentId는 initialData.issueNum 값에 의존하게 됩니다. Action Required 섹션의 항목들은 아직 저장되지 않은 대기 상태이므로, makeDefaultForm이 계산한 issueNum이 여러 항목에서 동일하게 할당되어 currentId 충돌이 발생합니다. 결과적으로 useEffect가 새로운 항목을 인식하지 못해 폼이 갱신되지 않습니다.",
+      "fix_plan": [
+        "currentId 생성 로직에서 고유성을 보장하기 위해 initialData.targetIssue를 추가합니다.",
+        "const currentId = editingId || initialData.targetIssue || initialData.issueNum || 'new'; 로 수정하여 대기 상태 항목도 개별적으로 식별되도록 합니다."
+      ]
+    },
+    "bug-3-analysis": {
+      "analysis": "RevisionLogTab의 handleSave는 editingId 상태를 기준으로 수정/생성을 결정합니다. New 모드에서 IssueForm의 드롭다운을 통해 기존 이슈를 선택하면 formData는 채워지지만, 부모의 editingId는 null로 유지됩니다. 이로 인해 저장 시 신규 생성 로직이 실행되어 중복 데이터가 발생합니다.",
+      "fix_plan": [
+        "RevisionLogTab에서 IssueForm에 setEditingId를 props로 전달합니다.",
+        "IssueForm의 드롭다운 onChange 핸들러에서 기존 이슈(ex)를 찾았을 때 onSetEditingId(ex.id)를 호출하여 부모의 상태를 동기화합니다."
+      ]
+    }
+  }
+}

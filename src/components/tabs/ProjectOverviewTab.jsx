@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { foundryProcessMap, ipCategoryNameMap } from '../../data/mockData';
 import { X } from '../Icons';
 import ActionBar from '../ActionBar';
@@ -75,15 +75,32 @@ const IpDeleteModal = ({ type, ipName, references, onConfirm, onCancel, customTi
   );
 };
 
-const ProjectOverviewTab = ({ data, currentStage, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, revisionLogData, faReportData, onEditingStateChange, onForceUnlock, globalIpDictionary, onAddCustomIp }) => {
+const ProjectOverviewTab = forwardRef(({ data, currentStage, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onFormDirtyChange, revisionLogData, faReportData, onEditingStateChange, onForceUnlock, globalIpDictionary, onAddCustomIp }, ref) => {
   const safeData = data || {};
+  // [수정] 모든 탭 초기 잠금 상태로 시작 (사용자 요청)
   const [unlockedOverview, setUnlockedOverview] = useState(false);
+
+  // [추가] 외부(App.jsx)에서 상태를 리셋할 수 있는 기능 노출
+  useImperativeHandle(ref, () => ({
+    canNavigate: async () => true, // Overview는 현재 별도의 Dirty 가드가 필요 없음
+    resetForm: () => {
+      setUnlockedOverview(false);
+    }
+  }));
   
   const showConfirm = useConfirm();
   
   const [overviewSchema, setOverviewSchema] = useState(safeData.UI_Schemas?.Contents || DEFAULT_OVERVIEW_SCHEMA);
   const [specsSchema, setSpecsSchema] = useState(safeData.UI_Schemas?.Specs || MAJOR_SPECS_SCHEMA);
   const [orgSchema, setOrgSchema] = useState(safeData.UI_Schemas?.Organization || ORGANIZATION_SCHEMA);
+
+  useEffect(() => {
+    // 프로젝트 전체 잠금 상태가 바뀌면 탭 로컬 편집 상태도 동기화
+    // [수정] 강제 잠금 로직만 유지하여 초기 진입 시 잠금 상태 보장 (사용자 요청)
+    if (isArchived === true) {
+      setUnlockedOverview(false);
+    }
+  }, [isArchived]);
 
   // ─── 지능형 Auto-Save ───
   const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
@@ -319,11 +336,13 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, lockReason, projec
     const newData = { ...safeData, [name]: value };
     if (name === 'Foundry') newData.Process = (foundryProcessMap[value] || [])[0] || '';
     if (onImmediateUpdate) onImmediateUpdate(newData);
+    if (onFormDirtyChange) onFormDirtyChange(true);
   };
 
   const handleNestedChange = (section, field, value) => {
     const newData = { ...safeData, [section]: { ...(safeData[section] || {}), [field]: value } };
     if (onImmediateUpdate) onImmediateUpdate(newData);
+    if (onFormDirtyChange) onFormDirtyChange(true);
   };
 
   const handleSubmit = () => {
@@ -750,6 +769,6 @@ const ProjectOverviewTab = ({ data, currentStage, isArchived, lockReason, projec
 
     </div>
   );
-};
+});
 
 export default ProjectOverviewTab;

@@ -1,50 +1,25 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity, Plus, X, Eye, RefreshCw, Lock, Link, AlertTriangle, ChevronDown, ChevronRight, Archive } from 'lucide-react';
-import IssueSummaryCard, { getIssueStatus } from '../IssueSummaryCard';
+import IssueSummaryCard from '../IssueSummaryCard';
+import IssueForm from '../IssueForm';
 import ActionBar from '../ActionBar';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { getIssueStatus, makeDefaultForm, calcNextNum, getHistory, DISPOSITION_OPTIONS, SEVERITY_OPTIONS } from '../../logic/revisionLogLogic';
 
-const lc = "block text-[13px] font-medium text-gray-600 mb-1.5";
-const ic = "px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
-const tc = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none";
 
-const DISPOSITION_OPTIONS = ['Waived', 'Acceptable', 'SW Workaround', 'Test Screening', 'System Mitigation', 'Revision', 'Closed'];
 
-const VERIFICATION_GAP_OPTIONS = [
-  'Verification Plan Omission',
-  'Model/PDK Mismatch',
-  'Simulation Limitation',
-  'Review Miss (Human Error)',
-  'Spec Ambiguity',
-  'Etc.'
-];
-
-const CustomerAlignmentFields = ({ formData, handleInput, lc, ic, tc, disabled = false }) => (
-  <div className="border border-indigo-100 rounded-xl p-4 bg-slate-50 space-y-3">
-    <h3 className="text-sm font-bold text-indigo-900 border-b border-indigo-100 pb-2 flex items-center gap-1.5"><FolderOpen size={14} className="text-indigo-500" /> Customer Alignment</h3>
-    <div><label className={lc}>Alignment Status</label><select name="customerAlignment" value={formData.customerAlignment} onChange={handleInput} disabled={disabled} className={`w-full ${ic}`}><option value="Internal Only">Internal Only (내부 이슈)</option><option value="Pending">Pending (고객 공유 대기/논의 중)</option><option value="Aligned">Aligned (고객 합의 완료)</option></select></div>
-    {formData.customerAlignment !== 'Internal Only' && (
-      <>
-        <div className="flex gap-2">
-          <div className="w-1/2"><label className={lc}>Report Type</label><select name="customerReportType" value={formData.customerReportType} onChange={handleInput} className={`w-full ${ic}`}><option value="N/A">N/A</option><option value="Transparent">Transparent</option><option value="Sanitized">Sanitized</option></select></div>
-          <div className="w-1/2"><label className={lc}>Customer Report Doc Link</label><input type="text" name="customerFacingAttachments" value={formData.customerFacingAttachments} onChange={handleInput} className={`w-full ${ic}`} placeholder="고객 리포트 링크" /></div>
-        </div>
-        {formData.customerReportType === 'Sanitized' && <div><label className={lc}>Sanitized Story/Message</label><textarea name="sanitizedStory" value={formData.sanitizedStory} onChange={handleInput} className={tc} rows="2" placeholder="고객에게 제공할 마사지된 사유 기재"></textarea></div>}
-        <div><label className={lc}>Customer Alignment Details / Notes</label><textarea name="customerAlignmentDetails" value={formData.customerAlignmentDetails} onChange={handleInput} className={tc} rows="2" placeholder="고객과의 합의 내용 요약 (메일/회의록 링크 포함)"></textarea></div>
-      </>
-    )}
-  </div>
-);
-
-export default function RevisionLogTab({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onForceUnlock }) {
+const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onFormDirtyChange, onForceUnlock }, ref) => {
   // Safe defaults
   const safeData = data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' };
   const issues = safeData.issues || [];
   const historyBlocks = safeData.historyBlocks || [];
   const project = overviewData?.Project_Name || 'Proj';
   const stage = currentRevision || 'EVT0';
+
+  const showConfirm = useConfirm();
+
 
   const [mode, setMode] = useState(safeData.initialMode || 'new');
   const [editingId, setEditingId] = useState(null);
@@ -74,28 +49,29 @@ export default function RevisionLogTab({ data, overviewData, ipIndexData, curren
   });
   const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
 
-const makeDefaultForm = (ip, issueNum = '') => ({
-  ipBlock: ip, subBlock: null, entryMode: 'new', issueNum, types: ['Initial'], severity: 'Minor',
-  phenomenon: '', rootCause: '', disposition: 'Revision', justification: '', modPlan: '',
-  verificationGap: '', gapComment: '',
-  customerAlignment: 'Internal Only', customerReportType: 'N/A', sanitizedStory: '',
-  customerFacingAttachments: '', customerAlignmentDetails: '', attachments: '', assignee: '',
-  origin: '', escapeReason: '', sideEffectSource: ''
-});
 
   const [formData, setFormData] = useState(makeDefaultForm(currentSelectedIp));
-  const showConfirm = useConfirm();
   // expandedHistoryItems → IssueCard 내부 상태로 이전됨
   const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTargetId, setHistoryTargetId] = useState('');
   const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
   const [selectedFaForPull, setSelectedFaForPull] = useState(null);
+  // [추가] 폼 강제 리셋을 위한 고유 키 상태 (사용자 요청 리셋 실패 해결)
+  const [formResetKey, setFormResetKey] = useState(0);
 
-  // ── 탭 로컬 편집 상태 (ProjectOverviewTab의 unlockedOverview와 동일한 패턴) ──
+  // ── 탭 로컬 편집 상태: 초기 잠금 상태로 시작 (사용자 요청) ──
   const [isTabEditing, setIsTabEditing] = useState(false);
   // isReadOnly: 전역 잠금(isArchived) 또는 로컬 잠금(!isTabEditing) 중 하나라도 true면 읽기 전용
   const isReadOnly = isArchived || !isTabEditing;
+
+  useEffect(() => {
+    // 프로젝트 전체 잠금 상태가 바뀌면 탭 로컬 편집 상태도 동기화
+    // [수정] 자동 잠금 해제 로직 제거, 강제 잠금 로직만 유지
+    if (isArchived === true) {
+      setIsTabEditing(false);
+    }
+  }, [isArchived]);
 
   useEffect(() => {
     if (onEditingStateChange) onEditingStateChange(isTabEditing);
@@ -125,22 +101,27 @@ const makeDefaultForm = (ip, issueNum = '') => ({
     setIsEditing: setIsTabEditing
   });
 
-  // Dropdown states for conditional rendering
-  const [originSelVal, setOriginSelVal] = useState('');
-  const [sideSelVal, setSideSelVal] = useState('');
+  const isFirstMount = useRef(true);
 
 
-  // ── pendingFaPullDataRef: handlePullFa에서 직접 setFormData를 호출하므로 이 effect는 불필요
-  useEffect(() => {
-    if (formData.assessment === 'Fixed') {
-      if (formData.disposition !== 'Closed') {
-        setFormData(prev => ({ ...prev, disposition: 'Closed' }));
-      }
-    } else if (formData.entryMode === 'eval' && formData.disposition === 'Closed') {
-      // Fixed에서 다른 상태로 변경 시 Disposition 초기화
-      setFormData(prev => ({ ...prev, disposition: 'Revision' }));
-    }
-  }, [formData.assessment]);
+
+  // ── 폼 수정 상태(Dirty) 감지 로직 ──
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Dirty 판별 순수 함수
+  const checkIfDirty = (data, eid) => {
+    return !!(
+      eid ||
+      (data.phenomenon || '').trim() || 
+      (data.rootCause || '').trim() || 
+      (data.comment || '').trim() || 
+      (data.reopenReason || '').trim() ||
+      (data.targetIssue || '') ||
+      data.faId ||
+      (data.types && data.types.length > 1) ||
+      data.subBlock
+    );
+  };
 
   const latestIssueStates = useMemo(() => {
     const s = {};
@@ -152,18 +133,44 @@ const makeDefaultForm = (ip, issueNum = '') => ({
     return s;
   }, [historyBlocks, issues, project]);
 
-  const calcNextNum = useCallback((ip) => {
-    let max = 0;
-    const chk = (id) => { if (!id) return; const pts = id.split('.'); if (pts[0] === ip) { const m = id.match(/#(\d+)/); if (m) { const n = parseInt(m[1]); if (n > max) max = n; } } };
-    Object.keys(latestIssueStates).forEach(id => chk(id));
-    return `ISSUE#${max + 1}`;
-  }, [latestIssueStates]);
+  const handleFormChange = useCallback((newData) => {
+    setFormData(newData);
+    const newDirty = checkIfDirty(newData, editingId);
+    setIsDirty(newDirty);
+    if (onFormDirtyChange) onFormDirtyChange(newDirty);
+  }, [editingId, onFormDirtyChange]);
+
+  // ✅ isDirty 상태를 ref로 복사하여 useImperativeHandle에서 항상 최신 값을 참조하도록 함 (Stale Closure 방지)
+  const isDirtyRef = useRef(isDirty);
+  useEffect(() => {
+    isDirtyRef.current = isTabEditing ? isDirty : false;
+  }, [isDirty, isTabEditing]);
+
+  // ── [신규] 명령형 내비게이션 상태 및 리셋 로직 노출 ──
+  useImperativeHandle(ref, () => ({
+    // ✅ 수정: 이제 직접 모달을 띄우지 않고, 수정 여부 상태만 App.jsx에 보고함
+    canNavigate: () => {
+      // 수정된 내용이 있으면 false 반환 -> App.jsx에서 통합 모달을 띄움
+      return !isDirtyRef.current;
+    },
+    // 외부(App.jsx)에서 명시적으로 폼을 비울 수 있는 기능
+    resetForm: () => {
+      setEditingId(null);
+      setSelectedFaForPull(null);
+      setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
+      setIsDirty(false);
+      if (onFormDirtyChange) onFormDirtyChange(false);
+      setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
+    }
+  }), [currentSelectedIp, latestIssueStates, onFormDirtyChange]);
+
+
 
   useEffect(() => {
     // IP 탭 선택 변경 시: 편집 중이 아니고 new 모드일 때만 ipBlock 및 issueNum 업데이트
     if (!editingId && mode === 'new') {
       setFormData(prev => {
-        const nextNum = calcNextNum(currentSelectedIp);
+        const nextNum = calcNextNum(currentSelectedIp, latestIssueStates);
         // 이미 해당 IP의 번호가 채워져 있다면 유지, 아니면 새 번호 채번
         const shouldUpdate = prev.ipBlock !== currentSelectedIp || !prev.issueNum;
         return { 
@@ -256,47 +263,19 @@ const makeDefaultForm = (ip, issueNum = '') => ({
     return candidates;
   }, [historyBlocks, safeData.loadedIssues, issues, project]);
 
-  const getHistory = (id) => {
-    const list = [];
-    historyBlocks.forEach(b => {
-      b.issues.forEach(i => {
-        const iId = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
-        if (iId === id) list.push({ stage: b.stageName, data: i });
-      });
-    });
-    issues.forEach(i => {
-      const iId = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
-      if (iId === id) list.push({ stage: stage, data: i });
-    });
-    return list;
-  };
 
 
   const curStageNums = useMemo(() => {
     return issues.filter(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock).map(i => i.issueNum).sort((a,b)=>a.localeCompare(b));
   }, [issues, formData.ipBlock]);
-
-  const isSaveDisabled = useMemo(() => {
-     if (isArchived && !editingId) return true;
-     if (mode === 'eval') return !formData.targetIssue || !formData.assessment || !(formData.comment?.trim());
-     if (mode === 'carryover') {
-       if (!formData.targetIssue || !formData.carryoverAction) return true;
-       if (formData.carryoverAction === 'Close' && (!formData.comment || formData.comment.trim() === '')) return true;
-       return false;
-     }
-     if (mode === 'reopen') return !formData.targetIssue || !formData.reopenReason;
-     
-     // [mode === 'new' 또는 'fa'] 공통 필수 필드 체크
-     const hasRequiredFields = formData.ipBlock && formData.issueNum && formData.phenomenon?.trim() && formData.rootCause?.trim();
-     return !hasRequiredFields;
-  }, [mode, formData, isArchived, editingId]);
-
   const handleUpdate = useCallback((newIssues) => {
     const updatedData = { ...safeData, issues: newIssues };
     if (onImmediateUpdate) onImmediateUpdate(updatedData);
   }, [safeData, onImmediateUpdate]);
 
   const SEVERITY_FA_MAP = { S1: 'Fail', S2: 'Major', S3: 'Minor' };
+
+
   const handlePullFa = async (fa) => {
     if (stage === 'EVT0' && fa.disposition === 'Revision') {
       await showConfirm({
@@ -313,7 +292,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       ...makeDefaultForm(fa.ipBlock),
       ipBlock: fa.ipBlock,
       entryMode: 'fa',
-      issueNum: calcNextNum(fa.ipBlock),
+      issueNum: calcNextNum(fa.ipBlock, latestIssueStates),
       types: ['Initial'],
       severity: SEVERITY_FA_MAP[fa.severity] || 'Major',
       disposition: fa.disposition === 'Revision' ? 'Revision' :
@@ -347,108 +326,107 @@ const makeDefaultForm = (ip, issueNum = '') => ({
     onFaReportUpdate({ ...faReportData, faReports: updatedReports });
   }, [faReportData, onFaReportUpdate]);
 
-  const handleUnlinkFa = (e) => {
-    e.preventDefault();
+  const handleUnlinkFa = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!formData.faId) return;
-    markFaLinkState(formData.faId, false);
-    setFormData(p => ({
-      ...p,
-      faId: '',
-      faReportId: '',
-      faCustomer: ''
-    }));
-    setSelectedFaForPull(null);
+
+    if (editingId) {
+      // [Step 5-2] 이미 리스트에 등록된 이슈인 경우, 카드에서의 삭제(해제)와 동일하게 처리하여 정합성 유지
+      // formData에 id가 유실되었을 가능성을 대비해 editingId를 명시적으로 주입
+      await handleDeleteRequest({ ...formData, id: editingId });
+    } else {
+      // 아직 저장되지 않은 신규 Pull 상태인 경우 폼만 초기화
+      markFaLinkState(formData.faId, false);
+      setFormData(p => ({
+        ...p,
+        faId: '',
+        faReportId: '',
+        faCustomer: ''
+      }));
+      setSelectedFaForPull(null);
+    }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async (dataToSave) => {
+    // IssueForm에서 전달된 최신 데이터를 사용하거나, fallback으로 현재 formData 사용
+    const finalData = dataToSave || formData;
+    
     if (isArchived && editingId) {
       setEditingId(null);
-      setFormData(makeDefaultForm(currentSelectedIp, stage));
+      setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
       return;
     }
 
-    if (!editingId && formData.faId) {
-       const isDuplicate = issues.some(issue => issue.faId === formData.faId);
-       if (isDuplicate) {
-          await showConfirm({
-            title: "중복 확인",
-            message: "이미 연동된 FA 리포트입니다.",
-            type: "warning",
-            showCancel: false
-          });
-          return;
-       }
-    }
+    const currentIp = finalData.ipBlock || currentSelectedIp;
     
-    // FA에서 온 데이터의 entryMode를 'new'로 정제화
-    // ipBlock은 formData에 이미 fa.ipBlock으로 설정되어 있음
     let entry = {
-      ...formData,
-      entryMode: (mode === 'fa') ? 'new' : mode,
-      ipBlock: formData.ipBlock || currentSelectedIp,  // FA IP 보장
+      ...finalData,
+      entryMode: (mode === 'fa') ? 'new' : finalData.entryMode || mode,
+      ipBlock: currentIp,
       stage: stage
     };
-    
-    if (mode === 'carryover') {
+
+    if (entry.entryMode === 'carryover') {
        entry.carryoverStatus = 'RESOLVED';
-       if (entry.carryoverAction === 'Keep Open') {
-       } else if (entry.carryoverAction === 'Revision') {
-          entry.disposition = 'Revision';
-       }
     }
-    
+
     let newIssues = [...issues];
+    const effectiveEditingId = editingId || finalData.id;
     
-    if (editingId) {
-      newIssues = newIssues.map(it => it.id === editingId ? { ...it, ...entry } : it);
+    if (effectiveEditingId && issues.some(it => it.id === effectiveEditingId)) {
+      // 기존 이슈 수정
+      newIssues = newIssues.map(it => it.id === effectiveEditingId ? { ...it, ...entry, id: effectiveEditingId } : it);
     } else {
+      // 신규 이슈 추가
       entry.id = Date.now();
-      newIssues.push(entry);
+      newIssues = [entry, ...issues];
     }
 
-    const currentIp = formData.ipBlock || currentSelectedIp;
-
-    handleUpdate(newIssues);
     if (onSubmit) onSubmit({ ...safeData, issues: newIssues });
 
-    if (selectedFaForPull) {
-      markFaLinkState(selectedFaForPull.faId, true);
-      setSelectedFaForPull(null);
+    if (finalData.faId) {
+      markFaLinkState(finalData.faId, true);
     }
 
-    // 폼 초기화: mode 변경 없이 직접 초기화하여 useEffect 트리거 방지
     setEditingId(null);
-    setFormData(makeDefaultForm(currentIp, calcNextNum(currentIp)));
-    // mode는 'fa' 저장 후 'new'로 복구 (단, useEffect가 폼을 다시 초기화하지 않도록
-    // makeDefaultForm을 먼저 호출한 뒤 mode를 변경)
-    if (mode === 'fa') {
-      // setTimeout으로 다음 렌더 사이클에 mode 변경 → 폼 초기화가 이미 완료된 상태
-      setTimeout(() => setMode('new'), 0);
-    }
-  };
+    setFormData(makeDefaultForm(currentIp, calcNextNum(currentIp, latestIssueStates)));
+  }, [isArchived, editingId, currentSelectedIp, latestIssueStates, mode, stage, issues, handleUpdate, onSubmit, safeData, markFaLinkState, formData]);
 
-  const cancelEdit = () => {
+  const cancelEdit = useCallback(async (skipConfirm = false) => {
+    if (!skipConfirm && isDirtyRef.current) {
+      const confirmed = await showConfirm({
+        title: "작성 취소",
+        message: "작성 중인 내용이 있습니다. 저장하지 않고 정말 취소하시겠습니까?",
+        type: "warning"
+      });
+      if (!confirmed) return;
+    }
+    // 폼 초기화 및 모든 Dirty 플래그 리셋
     setEditingId(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
-  };
+    setSelectedFaForPull(null);
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
+    setIsDirty(false);
+    if (onFormDirtyChange) onFormDirtyChange(false);
+    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
+  }, [showConfirm, currentSelectedIp, latestIssueStates, onFormDirtyChange]);
 
   const availableDispositions = stage === 'EVT0' && mode === 'new'
     ? DISPOSITION_OPTIONS.filter(opt => opt !== 'Revision')
     : DISPOSITION_OPTIONS;
 
-  const handleEdit = (item) => {
+  const handleEdit = useCallback((item) => {
     setMode(item.faId ? 'fa' : item.entryMode);
     setEditingId(item.id);
     setFormData({ ...item });
-  };
+  }, []);
 
-  const handleView = (item) => {
+  const handleView = useCallback((item) => {
     setMode(item.faId ? 'fa' : item.entryMode);
     setEditingId(item.id);
     setFormData({ ...item });
-  };
+  }, []);
 
-  const handleHistoryCardClick = (item) => {
+  const handleHistoryCardClick = useCallback((item) => {
     const issueId = item.entryMode === 'new'
       ? `${item.ipBlock}.${project}.${item.issueNum}`
       : item.targetIssue;
@@ -459,7 +437,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       setMode('reopen');
       setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp),
+        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
         entryMode: 'reopen',
         targetIssue: issueId,
         severity: item.severity || 'Major',
@@ -472,7 +450,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       setMode('eval');
       setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp),
+        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
         entryMode: 'eval',
         targetIssue: issueId,
         ipBlock: item.ipBlock || currentSelectedIp,
@@ -483,27 +461,59 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       setMode('carryover');
       setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp),
+        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
         entryMode: 'carryover',
         targetIssue: issueId,
         subBlock: item.subBlock || null,
       });
     }
-  };
+  }, [project, safeData.loadedIssues, currentSelectedIp, stage, latestIssueStates]);
 
-  const handleTabSwitch = (newMode) => {
-    // 명시적 탭 전환: 폼 초기화 → mode 변경
+  const handleTabSwitch = useCallback(async (newMode) => {
+    if (mode === newMode) return;
+    
+    // [보안 가드] ref를 통해 최신 dirty 상태 확인 (편집 모드일 때만 체크)
+    if (isTabEditing && isDirtyRef.current && !editingId) {
+      const confirmed = await showConfirm({
+        title: "작성 취소",
+        message: "작성 중인 내용이 있습니다. 저장하지 않고 정말 취소하시겠습니까?",
+        type: "warning"
+      });
+      if (!confirmed) return;
+    }
+    
+    // 명시적 탭 전환: 폼 초기화 및 상태 리셋 후 mode 변경
     setEditingId(null);
     setSelectedFaForPull(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
+    setIsDirty(false);
+    if (onFormDirtyChange) onFormDirtyChange(false);
+    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
+    
+    setIsTabEditing(false); // 탭 전환 시 편집 모드 명시적 해제 (Step 5-1)
     setMode(newMode);
-    // FA 탭 진입 시 편집 모드 자동 활성화 (isReadOnly 차단 방지)
-    if (newMode === 'fa' && !isTabEditing) {
-      setIsTabEditing(true);
-    }
-  };
+    
+  }, [mode, editingId, showConfirm, currentSelectedIp, latestIssueStates, isTabEditing, onFormDirtyChange]);
 
-  const handleDeleteRequest = async (item) => {
+  const handleIpChange = useCallback(async (newIp) => {
+    if (ipDropdown === newIp) return;
+    if (isTabEditing && isDirtyRef.current && !editingId) {
+      const confirmed = await showConfirm({
+        title: "작성 취소",
+        message: "IP를 변경하면 현재 작성 중인 내용이 초기화됩니다. 계속하시겠습니까?",
+        type: "warning"
+      });
+      if (!confirmed) return;
+    }
+    setIpDropdown(newIp);
+    setFormData(makeDefaultForm(newIp, calcNextNum(newIp, latestIssueStates)));
+    setIsDirty(false);
+    if (onFormDirtyChange) onFormDirtyChange(false);
+    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
+    if (editingId) setEditingId(null);
+  }, [ipDropdown, isDirty, editingId, showConfirm, latestIssueStates, isTabEditing, onFormDirtyChange]);
+
+  const handleDeleteRequest = useCallback(async (item) => {
     const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
     const targetId = (item.entryMode === 'new' || item.entryMode === 'fa')
       ? `${item.ipBlock}.${project}.${item.issueNum}`
@@ -523,26 +533,27 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       if (item.faId) {
         markFaLinkState(item.faId, false);
       }
-      if (editingId === item.id) cancelEdit();
+      // [Step 5-3] 이미 삭제 컨펌을 받았으므로, 폼을 닫을 때 추가 컨펌(작성 취소)을 생략함
+      if (editingId === item.id) cancelEdit(true);
     }
-  };
+  }, [showConfirm, project, issues, handleUpdate, onSubmit, safeData, markFaLinkState, editingId, cancelEdit]);
 
   const handleInput = (e) => {
     const { name, value } = e.target;
-    setFormData(p => ({ ...p, [name]: value }));
+    const nextData = { ...formData, [name]: value };
+    handleFormChange(nextData);
   };
 
   const handleTypeToggle = (t) => {
-    setFormData(p => {
-      const cur = p.types || [];
-      return { ...p, types: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] };
-    });
+    const cur = formData.types || [];
+    const nextTypes = cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t];
+    handleFormChange({ ...formData, types: nextTypes });
   };
 
   const confirmAssigneeChange = () => {
     if (assigneeModal.newAssignee) {
       const val = formData.assignee ? `${formData.assignee}, ${assigneeModal.newAssignee}` : assigneeModal.newAssignee;
-      setFormData(p => ({ ...p, assignee: val }));
+      handleFormChange({ ...formData, assignee: val });
     }
     setAssigneeModal({ open: false, newAssignee: '' });
   };
@@ -550,7 +561,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
 
 
   const renderHistoricalContext = (id) => {
-    const h = getHistory(id);
+    const h = getHistory(id, historyBlocks, issues, project, stage);
     if (h.length === 0) return null;
     const prev = h.length > 1 ? h[h.length - 2] : null;
     const cur = h[h.length - 1];
@@ -584,7 +595,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
     setEditingId(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp)));
+    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
   };
 
   return (
@@ -659,11 +670,11 @@ const makeDefaultForm = (ip, issueNum = '') => ({
         <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center overflow-x-auto whitespace-nowrap">
           <div className="flex flex-row items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1">IP 선택</span>
-            <button onClick={() => { setIpDropdown('All'); setFormData(p => ({ ...p, ipBlock: 'All' })); if (editingId) setEditingId(null); }} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === 'All' ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
+            <button onClick={() => handleIpChange('All')} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === 'All' ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
               All<span className="ml-1.5 text-[10px] opacity-40">○</span>
             </button>
             {availableIps.filter(ip => ip !== 'All' && ip !== 'Common').map(ip => (
-              <button key={ip} onClick={() => { setIpDropdown(ip); setFormData(p => ({ ...p, ipBlock: ip })); if (editingId) setEditingId(null); }} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === ip ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
+              <button key={ip} onClick={() => handleIpChange(ip)} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === ip ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
                 {ip}
                 {issues.some(i => i.entryMode === 'new' && i.ipBlock === ip) ? <span className="ml-1.5 text-[10px] opacity-80">✓</span> : <span className="ml-1.5 text-[10px] opacity-40">○</span>}
               </button>
@@ -672,400 +683,34 @@ const makeDefaultForm = (ip, issueNum = '') => ({
         </div>
       </div>
 
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        <div className={`bg-white border border-slate-200 rounded-xl p-5 flex flex-col transition-all ${editingId && !isReadOnly ? 'ring-2 ring-blue-400' : ''} ${editingId && isReadOnly ? 'ring-2 ring-indigo-300 bg-indigo-50/10' : ''}`}>
-           {editingId && (
-             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-               {isReadOnly ? (<><Lock size={14} className="text-slate-500" /><span className="text-sm font-bold text-slate-700">ReadOnly Mode <span className="text-xs font-normal text-slate-400 ml-1">(과거 차수 조회)</span></span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
-             </div>
-           )}
-           {stage === 'EVT0' && !isReadOnly && !editingId && (
-             <div className="mb-4 bg-orange-50 border border-orange-200 p-3 rounded-lg flex items-start gap-2">
-               <span className="text-orange-600 mt-0.5 shrink-0 font-bold">⚠️</span>
-               <p className="text-sm text-orange-800 font-medium">
-                 EVT0는 Baseline 단계입니다. 하드웨어 수정이 없는 평가 항목만 등록 가능하며, Revision 이슈는 EVT1부터 기록됩니다.
-               </p>
-             </div>
-           )}
-           <div className="mb-4">
-             {mode === 'eval' && <div className="bg-green-50 border border-green-100 p-3 rounded-lg"><p className="text-sm text-green-800 font-medium">이전 차수에서 [Revision] 처리된 항목에 대한 현재 차수({stage})의 테스트 결과를 기록합니다.</p></div>}
-             {mode === 'carryover' && <div className="bg-purple-50 border border-purple-200 p-3 rounded-lg"><p className="text-sm text-purple-800 font-medium">직전 차수에서 미해결/유보되어 넘어온 OPEN 이슈에 대한 Action을 결정합니다.</p></div>}
-             {mode === 'new' && <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg"><p className="text-sm text-blue-800 font-medium">새롭게 발견된 이슈나 잠재적인 위험 요소를 신규 엔트리로 등록합니다.</p></div>}
-             {mode === 'reopen' && <div className="bg-red-50 border border-red-100 p-3 rounded-lg"><p className="text-sm text-red-800 font-medium">완료/보류된 이슈를 다시 오픈하여 새로운 대책을 수립합니다.</p></div>}
-             {mode === 'fa' && <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg"><p className="text-sm text-amber-800 font-medium">분석이 완료된 FA 리포트의 데이터를 끌어와 신규 이슈로 등록합니다.</p></div>}
-           </div>
-
-           {mode === 'fa' && (
-             <button onClick={() => setPullFaModalOpen(true)} disabled={isArchived} className={`w-full mb-4 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 border transition-all ${isArchived ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : hasUnlinkedFa ? 'bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100 animate-pulse' : 'bg-slate-50 text-slate-600 border-slate-300 hover:bg-slate-100'}`}>
-               <Link size={14}/> FA 리포트에서 데이터 가져오기
-             </button>
-           )}
-
-          <fieldset disabled={isReadOnly} className="border-none p-0 m-0 flex-1">
-
-          {mode === 'reopen' ? (
-            <div className="space-y-4">
-              <div>
-                <label className={`${lc} flex justify-between`}><span>Target Issue to Re-open</span></label>
-                <select name="targetIssue" value={formData.targetIssue} onChange={(e) => {
-                  const val = e.target.value; 
-                  const ex = issues.find(i => i.entryMode === 'reopen' && i.targetIssue === val);
-                  if (ex) { setFormData(ex); setEditingId(ex.id); } 
-                  else { 
-                    const pv = latestIssueStates[val] || {}; 
-                    setFormData({ ...makeDefaultForm(formData.ipBlock, stage), entryMode: 'reopen', targetIssue: val, severity: pv.severity || 'Major', phenomenon: pv.phenomenon || '', rootCause: pv.rootCause || '', disposition: 'Revision' }); 
-                    setEditingId(null); 
-                  }
-                }} className={`w-full font-mono ${ic}`}>
-                  <option value="">이슈 선택...</option>
-                  {closedIssues.map(id => {
-                    const isReopened = issues.some(it => it.entryMode === 'reopen' && it.targetIssue === id);
-                    return (
-                      <option
-                        key={id}
-                        value={id}
-                        style={isReopened
-                          ? { color: '#1e40af', fontWeight: '700' }
-                          : { color: '#374151' }
-                        }
-                      >
-                        {isReopened ? `🔵 [재오픈됨] ${id}` : `⚪ [재오픈가능] ${id}`}
-                      </option>
-                    );
-                  })}
-                </select>
-                {formData.targetIssue && renderHistoricalContext(formData.targetIssue)}
-              </div>
-              {formData.targetIssue && (<>
-                <div><label className={lc}>Re-open Reason</label><textarea name="reopenReason" value={formData.reopenReason} onChange={handleInput} className={`border-red-300 bg-red-50 ${tc}`} rows="2"></textarea></div>
-                <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}><option value="Marginal">Marginal</option><option value="Fail">Fail</option><option value="Major">Major</option><option value="Minor">Minor</option></select></div>
-                <div><label className={lc}>Phenomenon</label><textarea name="phenomenon" value={formData.phenomenon} onChange={handleInput} className={tc} rows="2"></textarea></div>
-                <div><label className={lc}>Root Cause</label><textarea name="rootCause" value={formData.rootCause} onChange={handleInput} className={tc} rows="2"></textarea></div>
-                <div><label className={lc}>Disposition</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-                <CustomerAlignmentFields formData={formData} handleInput={handleInput} lc={lc} ic={ic} tc={tc} disabled={isReadOnly} />
-                <div><label className={lc}>Justification</label><textarea name="justification" value={formData.justification} onChange={handleInput} className={tc} rows="2"></textarea></div>
-              </>)}
-            </div>
-          ) : (mode === 'new' || mode === 'fa') ? (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="w-full sm:w-[25%] shrink-0">
-                  <label className={lc}>IP Block</label>
-                  <div className="h-10 px-3 flex items-center bg-blue-50 border border-blue-200 rounded-md text-sm font-bold text-blue-800">{currentSelectedIp}</div>
-                </div>
-                {ipIndexData && ipIndexData[currentSelectedIp] && ipIndexData[currentSelectedIp].Sub_Blocks && ipIndexData[currentSelectedIp].Sub_Blocks.length > 0 && (
-                  <div className="w-full sm:w-[30%] shrink-0">
-                    <label className={lc}>Sub-Block / Issue Level</label>
-                    <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => setFormData(p => ({ ...p, subBlock: e.target.value || null }))} className={`w-full ${ic}`} disabled={isReadOnly}>
-                      <option value="">[Top-Level / System Overall]</option>
-                      {ipIndexData[currentSelectedIp].Sub_Blocks.map(sb => (
-                        <option key={sb.id} value={sb.name}>{sb.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div className="w-full flex-1">
-                  <label className={`${lc} flex justify-between`}><span>Issue Number</span></label>
-                  <div className="flex gap-2">
-                    <select value={issues.some(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === formData.issueNum) ? formData.issueNum : (formData.issueNum === calcNextNum(formData.ipBlock) ? 'NEW' : 'DIRECT')}
-                      onChange={(e) => { 
-                        const v = e.target.value; 
-                        if (v === 'NEW') { setFormData({ ...makeDefaultForm(formData.ipBlock, stage), issueNum: calcNextNum(formData.ipBlock) }); setEditingId(null); } 
-                        else if (v === 'DIRECT') { setFormData(p => ({ ...p, issueNum: '' })); setEditingId(null); } 
-                        else { 
-                          const ex = issues.find(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === v); 
-                          if (ex) { setFormData({ ...ex, types: ex.types || [] }); setEditingId(ex.id); } 
-                        } 
-                      }} className={`w-[55%] ${ic}`}>
-                      <option value="NEW">+ 자동 채번(새로 등록)</option>
-                      {curStageNums.map(n => <option key={n} value={n}>✅ {n}(수정)</option>)}
-                      <option value="DIRECT">직접 입력...</option>
-                    </select>
-                    <input type="text" name="issueNum" value={formData.issueNum} onChange={(e) => {
-                       const v = e.target.value; 
-                       const ex = issues.find(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === v); 
-                       if (ex) { setFormData({ ...ex, types: ex.types || [] }); setEditingId(ex.id); } 
-                       else { setFormData(p => ({ ...p, issueNum: v })); if (editingId) setEditingId(null); } 
-                     }} className={`w-[45%] h-10 px-3 py-2 min-w-0 text-sm outline-none rounded-md ${editingId && mode === 'new' ? 'bg-blue-50 border border-blue-400 text-blue-700 font-bold' : 'bg-white text-gray-800 border border-gray-300 focus:border-blue-500'}`} placeholder="e.g. ISSUE#1" />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Issue Type</label>
-                <div className="flex flex-wrap gap-2">
-                  {['Initial', 'Latent', 'Side effect', 'Customer request', 'Hidden', 'Internal Eval.'].map(type => {
-                    const dis = (stage === 'EVT1' && (type === 'Latent' || type === 'Side effect')) || (stage !== 'EVT1' && type === 'Initial');
-                    return (<label key={type} className={`border px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5 transition-colors ${dis ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : 'cursor-pointer'} ${!dis && (formData.types || []).includes(type) ? 'bg-blue-50 border-blue-200 text-blue-700' : (!dis ? 'bg-white text-gray-600 hover:bg-gray-50' : '')}`}>
-                      <input type="checkbox" className="hidden" disabled={dis} checked={(formData.types || []).includes(type)} onChange={() => handleTypeToggle(type)} />
-                      {(formData.types || []).includes(type) && <CheckCircle size={13} className={dis ? "text-gray-400" : "text-blue-600"} />}{type}
-                    </label>);
-                  })}
-                </div>
-              </div>
-              {(formData.types || []).includes('Latent') && (
-                <div className="bg-orange-50 border border-orange-100 p-4 rounded-lg space-y-3">
-                  <div className="flex items-center gap-2 text-orange-800 font-semibold text-sm"><AlertCircle size={14} /> Latent Issue Details</div>
-                  <div><label className="block text-sm font-semibold mb-1 text-orange-900">Origin</label>
-                    <div className="flex gap-2">
-                      <select value={originSelVal} onChange={(e) => { const v = e.target.value; if (v !== 'Direct') setFormData(p => ({ ...p, origin: v })); else setFormData(p => ({ ...p, origin: '' })); setOriginSelVal(v); }} className={`${originSelVal === 'Direct' ? 'w-1/2' : 'w-full'} ${ic}`}>
-                        <option value="">차수 선택</option>{availOrigins.map(s => <option key={s} value={s}>{s}</option>)}<option value="Direct">직접 입력</option>
-                      </select>
-                      {originSelVal === 'Direct' && <input type="text" name="origin" value={formData.origin} onChange={handleInput} className={`w-1/2 ${ic}`} placeholder="직접 입력" />}
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-semibold mb-1 text-orange-900">Reason for Escape</label><textarea name="escapeReason" value={formData.escapeReason} onChange={handleInput} className={tc} rows="2"></textarea></div>
-                </div>
-              )}
-              {(formData.types || []).includes('Side effect') && (
-                <div className="bg-purple-50 border border-purple-100 p-4 rounded-lg space-y-3">
-                  <div className="flex items-center gap-2 text-purple-800 font-semibold text-sm"><AlertCircle size={14} /> Side Effect Details</div>
-                  <div><label className="block text-sm font-semibold mb-1 text-purple-900">Source of side effect</label>
-                    <div className="flex gap-2">
-                      <select value={sideSelVal} onChange={(e) => { const v = e.target.value; if (v !== 'Direct') setFormData(p => ({ ...p, sideEffectSource: v })); else setFormData(p => ({ ...p, sideEffectSource: '' })); setSideSelVal(v); }} className={`${sideSelVal === 'Direct' ? 'w-1/2' : 'w-full'} ${ic}`}>
-                        <option value="">이슈 선택(Revision 항목)</option>{sortedRevIds.map(id => <option key={id} value={id}>{id}</option>)}<option value="Direct">직접 입력</option>
-                      </select>
-                      {sideSelVal === 'Direct' && <input type="text" name="sideEffectSource" value={formData.sideEffectSource} onChange={handleInput} className={`w-1/2 ${ic}`} placeholder="직접 입력" />}
-                    </div>
-                  </div>
-                </div>
-              )}
-              {selectedFaForPull ? (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs font-bold text-amber-800">
-                  <Link size={12}/>
-                  FA 연동 대기: {selectedFaForPull.faId} — 저장 시 자동 연동됩니다.
-                  <button onClick={() => { setSelectedFaForPull(null); }} className="ml-auto text-amber-500 hover:text-amber-700"><X size={12}/></button>
-                </div>
-              ) : formData.faId ? (
-                <div className="flex items-center gap-2 bg-blue-50 border border-blue-300 rounded-lg px-3 py-2 text-xs font-bold text-blue-800">
-                  <Link size={12}/>
-                  FA 연동 중: {formData.faId}
-                  {!isReadOnly && (
-                    <button onClick={handleUnlinkFa} className="ml-auto text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-2 py-1 rounded shadow-sm text-[10px] transition-colors">연동 해제</button>
-                  )}
-                </div>
-              ) : null}
-              <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}><option value="Marginal">Marginal</option><option value="Fail">Fail</option><option value="Major">Major</option><option value="Minor">Minor</option></select></div>
-              <div><label className={lc}>Phenomenon (현상)</label><textarea name="phenomenon" value={formData.phenomenon} onChange={handleInput} className={tc} rows="3"></textarea></div>
-              <div><label className={lc}>Root Cause (원인)</label><textarea name="rootCause" value={formData.rootCause} onChange={handleInput} className={tc} rows="2"></textarea></div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={lc}>Verification Gap</label>
-                  <select name="verificationGap" value={formData.verificationGap || ''} onChange={handleInput} className={`w-full ${ic}`}>
-                    <option value="">Gap 선택...</option>
-                    {VERIFICATION_GAP_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={lc}>Gap Comment</label>
-                  <input type="text" name="gapComment" value={formData.gapComment || ''} onChange={handleInput} className={`w-full ${ic}`} placeholder="구체적인 누락 맥락을 입력하세요. 예: 저온 조건 시뮬레이션 누락" />
-                </div>
-              </div>
-
-              <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} disabled={formData.assessment === 'Fixed'} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-              <CustomerAlignmentFields formData={formData} handleInput={handleInput} lc={lc} ic={ic} tc={tc} disabled={isReadOnly} />
-            </div>
-          ) : mode === 'carryover' ? (
-            <div className="space-y-4">
-              <div>
-                <label className={`${lc}`}>{editingId && <span className="text-blue-600 text-xs px-2 py-0.5 bg-blue-50 rounded-full font-bold ml-2">수정모드</span>}</label>
-                <select name="targetIssue" value={formData.targetIssue} onChange={(e) => {
-                  const val = e.target.value;
-                  const ex = issues.find(i => i.entryMode === 'carryover' && i.targetIssue === val);
-                  if (ex) {
-                    setFormData(ex);
-                    setEditingId(ex.id);
-                  } else {
-                    let originMeta = {};
-                    for (const blk of historyBlocks) {
-                      const found = blk.issues.find(i => {
-                        const iId = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
-                        return iId === val;
-                      });
-                      if (found) {
-                        originMeta = {
-                          ipBlock: found.ipBlock,
-                          severity: found.severity,
-                          phenomenon: found.phenomenon || '',
-                          rootCause: found.rootCause || '',
-                          disposition: found.disposition || 'Revision',
-                        };
-                        break;
-                      }
-                    }
-                    setFormData({
-                      ...makeDefaultForm(originMeta.ipBlock || formData.ipBlock, stage),
-                      targetIssue: val,
-                      ...originMeta,
-                    });
-                    setEditingId(null);
-                  }
-                }} className={`w-full font-mono ${ic}`}>
-                  <option value="">이월된 이슈 선택...</option>
-                  {issues.filter(i => i.entryMode === 'carryover').map(it => (
-                    <option key={it.targetIssue} value={it.targetIssue}
-                      style={it.carryoverAction === 'Close' ? { color: '#15803d', fontWeight: '700' } : { color: '#c2410c', fontWeight: '700' }}
-                    >
-                      {it.carryoverAction === 'Close' ? `🟢 [이월-DONE] ${it.targetIssue}` : `🟠 [이월-OPEN] ${it.targetIssue}`}
-                    </option>
-                  ))}
-                  {Array.from(carryoverCandidateSet)
-                    .filter(id => !issues.some(i => i.entryMode === 'carryover' && i.targetIssue === id))
-                    .sort()
-                    .map(id => (
-                      <option key={id} value={id} style={{ color: '#c2410c' }}>
-                        {`🟠 [이월-OPEN] ${id}`}
-                      </option>
-                    ))
-                  }
-                </select>
-                {formData.targetIssue && renderHistoricalContext(formData.targetIssue)}
-              </div>
-              
-              {formData.targetIssue && (
-                <div className="border-t border-dashed pt-4 space-y-4">
-                   <label className="block text-sm font-semibold text-gray-700">디자이너 Action 결정</label>
-                   <div className="flex gap-2 mb-2">
-                      <label className={`flex-1 text-sm font-bold flex items-center gap-2 border p-2 rounded-lg cursor-pointer ${formData.carryoverAction === 'Keep Open' ? 'bg-purple-50 border-purple-300 text-purple-800' : 'bg-white'}`}>
-                         <input type="radio" name="carryoverAction" value="Keep Open" checked={formData.carryoverAction === 'Keep Open'} onChange={handleInput}/> Keep Open
-                      </label>
-                      <label className={`flex-1 text-sm font-bold flex items-center gap-2 border p-2 rounded-lg cursor-pointer ${formData.carryoverAction === 'Close' ? 'bg-red-50 border-red-300 text-red-800' : 'bg-white'}`}>
-                         <input type="radio" name="carryoverAction" value="Close" checked={formData.carryoverAction === 'Close'} onChange={handleInput}/> Close
-                      </label>
-                      <label className={`flex-1 text-sm font-bold flex items-center gap-2 border p-2 rounded-lg cursor-pointer ${formData.carryoverAction === 'Revision' ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white'}`}>
-                         <input type="radio" name="carryoverAction" value="Revision" checked={formData.carryoverAction === 'Revision'} onChange={handleInput}/> Revision
-                      </label>
-                   </div>
-                   
-                   {formData.carryoverAction === 'Keep Open' && (
-                     <div><label className={lc}>Keep Open 사유</label><textarea name="comment" value={formData.comment || ''} onChange={handleInput} placeholder="여전히 조치되지 않은 사유 입력" className={tc} rows="2"></textarea></div>
-                   )}
-                   
-                   {formData.carryoverAction === 'Close' && (
-                     <div className="bg-red-50 border border-red-200 p-4 rounded-lg space-y-3">
-                       <h3 className="text-sm font-bold text-red-700">이슈 강제 종료 (Close)</h3>
-                       <div><label className={lc}>종결 방향</label>
-                         <select name="disposition" value={formData.disposition === 'Waived' || formData.disposition === 'Acceptable' ? formData.disposition : 'Acceptable'} onChange={handleInput} className={`w-full font-bold text-red-700 border-red-300 ${ic}`}>
-                           <option value="Acceptable">Acceptable (수용 가능 수준)</option>
-                           <option value="Waived">Waived (예외 인정/무시)</option>
-                         </select>
-                       </div>
-                       <div><label className={lc}>종료 사유 (필수)</label><textarea name="comment" value={formData.comment || ''} onChange={handleInput} placeholder="어떤 근거로 이 이슈를 무시하거나 수용하는지 상세 사유를 남겨주세요." className={`border-red-300 focus:border-red-500 focus:ring-red-500 ${tc}`} rows="2"></textarea></div>
-                     </div>
-                   )}
-                   
-                   {formData.carryoverAction === 'Revision' && (
-                     <div><label className={lc}>새 대책 / 수정 내용</label><textarea name="modPlan" value={formData.modPlan || ''} onChange={handleInput} className={tc} rows="2"></textarea></div>
-                   )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className={`${lc}`}>{editingId && <span className="text-blue-600 text-xs px-2 py-0.5 bg-blue-50 rounded-full font-bold ml-2">수정모드</span>}</label>
-                <select name="targetIssue" value={formData.targetIssue} onChange={(e) => {
-                  const v = e.target.value;
-                  const ex = issues.find(i => i.entryMode === 'eval' && i.targetIssue === v);
-                  if (ex) {
-                    setFormData({ ...ex, types: ex.types || [] });
-                    setEditingId(ex.id);
-                  } else {
-                    let originMeta = {};
-                    for (const blk of historyBlocks) {
-                      const found = blk.issues.find(i => {
-                        const iId = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
-                        return iId === v;
-                      });
-                      if (found) { originMeta = { ipBlock: found.ipBlock, severity: found.severity }; break; }
-                    }
-                    setFormData(p => ({
-                      ...makeDefaultForm(originMeta.ipBlock || p.ipBlock, stage),
-                      targetIssue: v,
-                      types: [],
-                      assessment: 'Fixed',
-                      comment: '',
-                      ...originMeta,
-                    }));
-                    setEditingId(null);
-                  }
-                }} className={`w-full font-mono ${ic}`}>
-                  <option value="">이슈 선택...</option>
-                  {sortedLoadedIssues.map(id => {
-                    const isDone = issues.some(it => it.entryMode === 'eval' && it.targetIssue === id);
-                    return (
-                      <option
-                        key={id}
-                        value={id}
-                        style={isDone
-                          ? { color: '#1e40af', fontWeight: '700' }
-                          : { color: '#dc2626' }
-                        }
-                      >
-                        {isDone ? `🔵 [평가완료] ${id}` : `🔴 [평가대기] ${id}`}
-                      </option>
-                    );
-                  })}
-                </select>
-                {formData.targetIssue && renderHistoricalContext(formData.targetIssue)}
-              </div>
-              <div><label className={lc}>Assessment Result</label><select name="assessment" value={formData.assessment} onChange={handleInput} className={`w-full font-bold ${ic}`}><option value="Fixed">Fixed (완전 해결)</option><option value="Partial">Partial (부분 개선)</option><option value="Unresolved">Unresolved (해결 안 됨)</option><option value="Deferred">🔵 Deferred — 유보</option></select></div>
-              <div><label className={lc}>Comment (평가 의견)</label><textarea name="comment" value={formData.comment} onChange={handleInput} className={tc} rows="2"></textarea></div>
-              
-              {formData.assessment === 'Deferred' && (
-                <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">
-                   <h3 className="text-sm font-bold text-blue-800">유보(Deferred) 상세 정보</h3>
-                   <div><label className="block text-sm font-semibold text-blue-900 mb-1">Defer Reason</label><textarea name="deferReason" value={formData.deferReason || ''} onChange={handleInput} className={tc} rows="2"></textarea></div>
-                </div>
-              )}
-              {(formData.assessment === 'Partial' || formData.assessment === 'Unresolved') && (
-                <div className="border-t border-dashed pt-4 space-y-4">
-                  <h3 className="text-sm font-bold text-red-600 flex items-center gap-2"><AlertCircle size={15} /> Partial / Unresolved 상세 내용</h3>
-                  <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}><option value="Major">Major</option><option value="Minor">Minor</option></select></div>
-                  <div><label className={lc}>Disposition</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-                  <CustomerAlignmentFields formData={formData} handleInput={handleInput} lc={lc} ic={ic} tc={tc} />
-                </div>
-              )}
-            </div>
-          )}
-
-          <div><label className={`${lc} mt-4 flex justify-between items-center`}><span>Assignee (담당자)</span></label><input type="text" name="assignee" value={formData.assignee || ''} onClick={() => !isReadOnly && setAssigneeModal({ open: true, newAssignee: '' })} readOnly className={`w-full ${isReadOnly ? 'cursor-not-allowed bg-slate-50 text-slate-400 border-slate-200' : 'cursor-pointer bg-slate-50 focus:bg-slate-100 hover:border-blue-400'} transition-colors ${ic}`} placeholder="클릭하여 지정" /></div>
-          </fieldset>
-          
-          <div className="mt-6 flex gap-3 pt-4 border-t border-gray-100">
-            <button onClick={handleSave} disabled={isSaveDisabled || isReadOnly} className={`flex-1 py-3 rounded-lg font-bold shadow-sm transition-colors flex items-center justify-center gap-2 ${isSaveDisabled || isReadOnly ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-              <CheckCircle size={17} /> {isReadOnly ? '(읽기 전용)' : editingId ? '수정 내용 저장' : '리스트에 추가'}
-            </button>
-            <button
-              onClick={async () => {
-                if (isReadOnly) { cancelEdit(); return; }
-                const hasContent = editingId ||
-                  formData.phenomenon || formData.rootCause || formData.issueNum ||
-                  formData.comment || formData.reopenReason || selectedFaForPull;
-                if (hasContent) {
-                  const confirmed = await showConfirm({
-                    title: "입력 내용 초기화",
-                    message: "작성 중인 내용이 모두 사라집니다. 초기화할까요?",
-                    type: "warning",
-                    confirmText: "초기화"
-                  });
-                  if (confirmed) {
-                    setSelectedFaForPull(null);
-                    pendingFaPullDataRef.current = null;
-                    cancelEdit();
-                  }
-                } else {
-                  cancelEdit();
-                }
-              }}
-              className="flex-none px-4 py-3 rounded-lg text-sm font-semibold text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors border border-gray-200 flex items-center gap-1.5"
-            >
-              <X size={15} /> {isReadOnly && editingId ? '닫기' : '취소'}
-            </button>
-          </div>
-        </div>
+        <IssueForm
+          key={mode + (editingId || 'new') + (formData.faId || '') + formResetKey}
+          initialData={formData}
+          mode={mode}
+          editingId={editingId}
+          isReadOnly={isReadOnly}
+          isArchived={isArchived}
+          stage={stage}
+          project={project}
+          currentSelectedIp={currentSelectedIp}
+          latestIssueStates={latestIssueStates}
+          historyBlocks={historyBlocks}
+          issues={issues}
+          ipIndexData={ipIndexData}
+          curStageNums={curStageNums}
+          carryoverCandidateSet={carryoverCandidateSet}
+          sortedLoadedIssues={sortedLoadedIssues}
+          availOrigins={availOrigins}
+          sortedRevIds={sortedRevIds}
+          onSave={handleSave}
+          onCancel={cancelEdit}
+          onChange={handleFormChange}
+          onPullFaClick={() => setPullFaModalOpen(true)}
+          onUnlinkFa={handleUnlinkFa}
+          onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
+          onSetEditingId={setEditingId}
+        />
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 flex flex-col h-[calc(100vh-12rem)] overflow-y-auto">
           <div className="sticky top-0 z-10 bg-gray-50 rounded-t-xl px-5 pt-5 pb-3 mb-3 border-b border-gray-200 flex flex-row items-center justify-between">
@@ -1200,7 +845,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
                               project={project}
                               isReadOnly={true}
                               expandable
-                              onEdit={() => handleHistoryCardClick(virtualItem)}
+                              onEdit={handleHistoryCardClick}
                               historyStage={historyBlocks[historyBlocks.length - 1]?.stageName}
                               needsEval={true}
                             />
@@ -1218,7 +863,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
                               project={project}
                               isReadOnly={true}
                               expandable
-                              onEdit={() => handleHistoryCardClick(coVirtual)}
+                              onEdit={handleHistoryCardClick}
                               historyStage={historyBlocks[historyBlocks.length - 1]?.stageName}
                               needsEval={false}
                             />
@@ -1449,7 +1094,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
         </div>
       )}
       {assigneeModal.open && (
-         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full"><h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-600"><Edit2 size={19} /> 담당자 변경</h3><input autoFocus type="text" value={assigneeModal.newAssignee} onChange={(e) => setAssigneeModal(p => ({ ...p, newAssignee: e.target.value }))} className={`w-full ${ic} mb-4`} placeholder="이름 입력" onKeyDown={(e) => { if(e.key==='Enter') confirmAssigneeChange() }}/><div className="flex justify-end gap-2"><button onClick={() => setAssigneeModal({open:false, newAssignee:''})} className="px-4 py-2 bg-gray-100 rounded-md text-sm">취소</button><button onClick={confirmAssigneeChange} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm">확인</button></div></div></div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full"><h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-600"><Edit2 size={19} /> 담당자 변경</h3><input autoFocus type="text" value={assigneeModal.newAssignee} onChange={(e) => setAssigneeModal(p => ({ ...p, newAssignee: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4" placeholder="이름 입력" onKeyDown={(e) => { if(e.key==='Enter') confirmAssigneeChange() }}/><div className="flex justify-end gap-2"><button onClick={() => setAssigneeModal({open:false, newAssignee:''})} className="px-4 py-2 bg-gray-100 rounded-md text-sm">취소</button><button onClick={confirmAssigneeChange} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm">확인</button></div></div></div>
       )}
       {historyModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -1468,7 +1113,7 @@ const makeDefaultForm = (ip, issueNum = '') => ({
             <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
               {historyTargetId ? (
                 <div className="space-y-4 ml-4">
-                  {getHistory(historyTargetId).map((h, i) => (
+                  {getHistory(historyTargetId, historyBlocks, issues, project, stage).map((h, i) => (
                     <div key={i} className="relative pl-5 border-l-2 border-slate-300 pb-4">
                        <div className="absolute w-3 h-3 bg-slate-500 rounded-full -left-[7px] top-1 border-2 border-white"></div>
                        <h4 className="font-bold text-slate-800 mb-2">{h.stage} <span className="text-xs bg-slate-200 px-1.5 py-0.5 rounded">{h.data.entryMode}</span></h4>
@@ -1488,4 +1133,6 @@ const makeDefaultForm = (ip, issueNum = '') => ({
       )}
     </div>
   );
-}
+});
+
+export default RevisionLogTab;

@@ -1,25 +1,8 @@
 import React, { useState } from 'react';
 import { Edit2, Trash2, FolderOpen, User, Tag, Link } from 'lucide-react';
+import { getIssueStatus } from '../logic/revisionLogLogic';
 
-export const getIssueStatus = (item) => {
-  if (!item) return 'OPEN';
-  // eval 모드: Deferred → DEFERRED, Fixed만 → CLOSED, Partial/Unresolved → OPEN
-  if (item.entryMode === 'eval') {
-    if (item.assessment === 'Deferred') return 'DEFERRED';
-    if (item.assessment === 'Fixed') return 'CLOSED';
-    return 'OPEN';
-  }
-  // reopen 모드: 무조건 OPEN
-  if (item.entryMode === 'reopen') return 'OPEN';
-  // carryover 모드: Close 액션 시에만 CLOSED
-  if (item.entryMode === 'carryover') {
-    return item.carryoverAction === 'Close' ? 'CLOSED' : 'OPEN';
-  }
-  // new / fa 모드: 무조건 OPEN
-  return 'OPEN';
-};
-
-export default function IssueSummaryCard({
+export default React.memo(function IssueSummaryCard({
   item,
   project,
   isReadOnly = false,
@@ -313,4 +296,4 @@ export default function IssueSummaryCard({
       )}
     </div>
   );
-}
+});
