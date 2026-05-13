@@ -769,8 +769,8 @@ function App() {
         retryCount++;
       }
 
-      // [수정] projectsList 캐시 정합성 이슈로 인해 locked_by 체크 대신 무조건 잠금 해제 시도 (Supabase 수준에서 안전하게 처리됨)
-      await projectService.setProjectLock(curActive.id, false, null);
+      // [Bug #3 Fix] 명시적 소유자(currentUser) 전달로 본인의 잠금 확실히 해제
+      await projectService.setProjectLock(curActive.id, false, currentUser);
     }
 
     if (!fromPopState) {

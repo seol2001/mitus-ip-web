@@ -97,7 +97,8 @@ export const useProjectService = ({ isDemoMode, setProjectsList, projectsList, a
       return;
     }
 
-    const { error } = await projectService.setProjectLock(projectId, false, null);
+    // [의도 기반 API 적용] 강제 탈취 시에는 소유권 체크 없이 해제 시도
+    const { error } = await projectService.forceReleaseLock(projectId);
 
     if (error) {
       console.error('❌ Force Unlock Error:', error);

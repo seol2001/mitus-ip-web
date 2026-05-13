@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-05-08T05:07:01.385Z",
+  "lastUpdated": "2026-05-13T05:22:45.477Z",
   "activeFeatures": [
     "ui-fragmentation",
     "workspace-fragmentation",
@@ -8,7 +8,8 @@
     "revision-log-persistence-fix",
     "revision-log-stabilization",
     "revision-log-stabilization-v2",
-    "unit-d-stability-security"
+    "unit-d-stability-security",
+    "bug-03-zombie-lock-fix"
   ],
   "primaryFeature": "ui-fragmentation",
   "features": {
@@ -283,6 +284,43 @@
         "started": "2026-05-08T05:06:30.139Z",
         "lastUpdated": "2026-05-08T05:07:01.385Z"
       }
+    },
+    "bug-03-zombie-lock-fix": {
+      "phase": "plan",
+      "matchRate": null,
+      "iterationCount": 0,
+      "documents": {},
+      "taskChain": [
+        {
+          "phase": "plan",
+          "status": "active",
+          "createdAt": "2026-05-13T05:22:45.476Z"
+        },
+        {
+          "phase": "design",
+          "status": "pending",
+          "createdAt": "2026-05-13T05:22:45.476Z"
+        },
+        {
+          "phase": "do",
+          "status": "pending",
+          "createdAt": "2026-05-13T05:22:45.476Z"
+        },
+        {
+          "phase": "check",
+          "status": "pending",
+          "createdAt": "2026-05-13T05:22:45.476Z"
+        },
+        {
+          "phase": "report",
+          "status": "pending",
+          "createdAt": "2026-05-13T05:22:45.476Z"
+        }
+      ],
+      "timestamps": {
+        "started": "2026-05-13T05:22:45.477Z",
+        "lastUpdated": "2026-05-13T05:22:45.477Z"
+      }
     }
   },
   "pipeline": {
@@ -293,7 +331,7 @@
   "session": {
     "startedAt": "2026-05-06T00:04:01.643Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-05-08T05:07:01.385Z"
+    "lastActivity": "2026-05-13T05:22:45.477Z"
   },
   "history": [
     {

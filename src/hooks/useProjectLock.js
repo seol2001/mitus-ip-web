@@ -88,7 +88,7 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
 
         if (lockAttempted) {
           // [Bug #4 Fix] 원자적 업데이트 결과를 확인하여 Race Condition 방지
-          const { count, error } = await projectService.setProjectLock(activeProject.id, true, currentUser);
+          const { count, error } = await projectService.acquireLock(activeProject.id, currentUser);
           if (error || count === 0) {
             console.error('🚫 [Lock] 원자적 잠금 획득 실패 (Race Condition 패배 또는 RLS 차단).', error);
             showConfirmRef.current({
@@ -167,8 +167,8 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
       if (activeProj && !demo) {
         const currentMeta = projectsListRef.current.find(p => p.id === activeProj.id);
         if (currentMeta?.locked_by === curUser) {
-          // fetch + keepalive를 사용하여 브라우저가 닫혀도 요청이 전송되도록 함
-          const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/projects?id=eq.${activeProj.id}`;
+          // [Bug #3 Fix] fetch + keepalive 사용 시 소유자 확인 필터(locked_by=eq.) 명시
+          const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/projects?id=eq.${activeProj.id}&locked_by=eq.${curUser}`;
           const headers = {
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,

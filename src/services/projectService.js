@@ -85,37 +85,76 @@ export const projectService = {
   },
 
   /**
-   * 프로젝트 잠금/해제 설정 (Atomic Update 적용)
+   * [의도 기반 API] 프로젝트 잠금 획득 (Atomic Acquire)
+   */
+  async acquireLock(projectId, userId, lockTime = null) {
+    const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const newLockTime = lockTime || new Date().toISOString();
+
+    return await supabase
+      .from('projects')
+      .update({ 
+        is_locked: true, 
+        locked_by: userId, 
+        locked_at: newLockTime 
+      })
+      .eq('id', projectId)
+      // [원자적 잠금] 아무도 잠그지 않았거나, 내가 이미 잠갔거나, 잠금이 정체(Stale)된 경우에만 성공
+      .or(`locked_by.is.null,locked_by.eq.${userId},locked_at.lt.${staleThreshold}`)
+      .select('*', { count: 'exact' });
+  },
+
+  /**
+   * [의도 기반 API] 프로젝트 잠금 해제 (Atomic Release)
+   * 소유권 검증을 통해 본인의 잠금만 해제 가능
+   */
+  async releaseLock(projectId, userId) {
+    if (!userId) {
+      console.warn('⚠️ [projectService] userId 없이 releaseLock이 호출되었습니다. 해제가 무시될 수 있습니다.');
+    }
+
+    return await supabase
+      .from('projects')
+      .update({ 
+        is_locked: false, 
+        locked_by: null, 
+        locked_at: null 
+      })
+      .eq('id', projectId)
+      .eq('locked_by', userId) // 반드시 소유자 본인이어야 함
+      .select('*', { count: 'exact' });
+  },
+
+  /**
+   * [의도 기반 API] 프로젝트 강제 해제 (Force Release / Takeover)
+   * 타인의 좀비 잠금이나 정체된 잠금을 강제로 풀 때 사용
+   */
+  async forceReleaseLock(projectId) {
+    return await supabase
+      .from('projects')
+      .update({ 
+        is_locked: false, 
+        locked_by: null, 
+        locked_at: null 
+      })
+      .eq('id', projectId)
+      // 강제 해제는 소유자 체크 없이 ID만으로 수행 (관리자 기능 또는 Takeover 시나리오)
+      .select('*', { count: 'exact' });
+  },
+
+  /**
+   * [하위 호환용] 프로젝트 잠금/해제 설정 (Atomic Update 적용)
+   * 점진적 폐기 대상이며, 신규 코드는 acquireLock / releaseLock 사용 권장
    */
   async setProjectLock(projectId, isLocked, userId, lockTime = null) {
     if (isLocked) {
-      // 10분(600000ms) 이전 시간이면 Stale 상태로 간주
-      const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const newLockTime = lockTime || new Date().toISOString();
-
-      return await supabase
-        .from('projects')
-        .update({ 
-          is_locked: true, 
-          locked_by: userId, 
-          locked_at: newLockTime 
-        })
-        .eq('id', projectId)
-        // [핵심] 원자적 잠금: 아무도 잠그지 않았거나, 내가 이미 잠갔거나, 잠금이 정체(Stale)된 경우에만 성공
-        .or(`locked_by.is.null,locked_by.eq.${userId},locked_at.lt.${staleThreshold}`)
-        .select('*', { count: 'exact' });
+      return this.acquireLock(projectId, userId, lockTime);
     } else {
-      // 잠금 해제: 반드시 본인이 소유한 잠금만 해제 가능 (타인의 잠금 강제 해제 방지)
-      return await supabase
-        .from('projects')
-        .update({ 
-          is_locked: false, 
-          locked_by: null, 
-          locked_at: null 
-        })
-        .eq('id', projectId)
-        .eq('locked_by', userId) 
-        .select('*', { count: 'exact' });
+      // [Bug #3 Fix] userId가 null인 경우 강제 해제(force)로 간주하여 처리
+      if (!userId) {
+        return this.forceReleaseLock(projectId);
+      }
+      return this.releaseLock(projectId, userId);
     }
   },
 
