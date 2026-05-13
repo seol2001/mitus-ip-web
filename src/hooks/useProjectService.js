@@ -89,11 +89,12 @@ export const useProjectService = ({ isDemoMode, setProjectsList, projectsList, a
     setProjectsList(prev => prev.filter(p => p.id !== projectId));
   }, [showConfirm, isDemoMode, setProjectsList, projectsList, REFERENCE_PROJECT_ID]);
 
-  const handleForceUnlock = useCallback(async (projectId) => {
+  const handleForceUnlock = useCallback(async (projectId, onSuccess) => {
     if (isDemoMode) {
       setProjectsList(prev => prev.map(p => 
         p.id === projectId ? { ...p, is_locked: false, locked_by: null, locked_at: null } : p
       ));
+      if (onSuccess) onSuccess();
       return;
     }
 
@@ -110,6 +111,7 @@ export const useProjectService = ({ isDemoMode, setProjectsList, projectsList, a
       });
     } else {
       console.log(`✅ [Force Unlock] ${projectId} 잠금이 해제되었습니다.`);
+      if (onSuccess) onSuccess();
     }
   }, [isDemoMode, setProjectsList, showConfirm]);
 

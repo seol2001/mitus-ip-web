@@ -13,7 +13,7 @@ export default function DashboardHeader({
           <h1 className="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-indigo-700 tracking-tight">
             Mitus IP Web Dashboard
           </h1>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 font-black tracking-tighter shadow-sm">V1.3</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 font-black tracking-tighter shadow-sm">V1.3.2</span>
         </div>
         <p className="text-sm text-slate-500 mt-1 font-medium">
           모든 프로젝트 현황 및 차수 관리 (Atomic Lock System)

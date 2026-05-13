@@ -7,7 +7,7 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5분
 /**
  * 프로젝트 잠금 및 하트비트 관리 훅
  */
-export function useProjectLock({ activeProject, currentUser, projectsList, setProjectsList, isDemoMode, showConfirm }) {
+export function useProjectLock({ activeProject, currentUser, projectsList, setProjectsList, isDemoMode, showConfirm, setActiveProject }) {
   // Refs for stable closure in interval/event listeners
   const activeProjectRef = useRef(activeProject);
   const currentUserRef = useRef(currentUser);
@@ -116,6 +116,11 @@ export function useProjectLock({ activeProject, currentUser, projectsList, setPr
                 p.id === activeProject.id ? { ...p, ...data[0] } : p
               ));
             }
+
+            // [V1.3.2] 잠금 획득 성공 시 forceLock 플래그를 소멸시켜, 추후 본인이 피해자가 되었을 때 가드에 걸리지 않게 함
+            if (setActiveProject) {
+              setActiveProject(prev => ({ ...prev, forceLock: false }));
+            }
           }
         }
       }
@@ -168,14 +173,25 @@ export function useProjectLock({ activeProject, currentUser, projectsList, setPr
 
     if (isSessionLockedByOther && activeProject?.mode === 'edit') {
       console.warn('⚠️ [Realtime] 잠금 권한이 상실되었습니다.');
-      showConfirmRef.current({
-        title: "편집 권한 상실",
-        message: `다른 사용자(${lockDetail.lockedBy})가 편집 권한을 가져갔습니다.\n이후의 수정사항은 저장되지 않을 수 있으며, 현재 페이지는 읽기 전용으로 전환됩니다.`,
-        type: "danger",
-        showCancel: false
-      });
+      
+      const triggerLossModal = async () => {
+        await showConfirmRef.current({
+          title: "편집 권한 상실",
+          message: `다른 사용자(${lockDetail.lockedBy})가 편집 권한을 가져갔습니다.\n이후의 수정사항은 저장되지 않을 수 있으며, 현재 페이지는 읽기 전용으로 전환됩니다.`,
+          type: "danger",
+          showCancel: false
+        });
+
+        // [V1.3.2] 모달 확인 후 즉시 mode를 readonly로 전환하여 세션 상태를 리셋
+        // 이를 통해 다음번 순환 탈취 시에도 React가 상태 변화를 감지할 수 있게 함
+        if (setActiveProject) {
+          setActiveProject(prev => ({ ...prev, mode: 'readonly' }));
+        }
+      };
+
+      triggerLossModal();
     }
-  }, [isSessionLockedByOther, activeProject?.mode, activeProject?.forceLock, lockDetail.isByMe, lockDetail.lockedBy]);
+  }, [isSessionLockedByOther, activeProject?.mode, activeProject?.forceLock, lockDetail.isByMe, lockDetail.lockedBy, setActiveProject]);
 
   /**
    * 브라우저 종료 시 잠금 해제 (Cleanup)

@@ -312,7 +312,8 @@ function App() {
     projectsList,
     setProjectsList, // [V1.3.1 Hotfix] 낙관적 업데이트 지원
     isDemoMode,
-    showConfirm
+    showConfirm,
+    setActiveProject // [V1.3.2] 상태 리셋(forceLock 해제 및 mode 전환)을 위해 추가
   });
 
   const isArchived = !!lockReason || currentData?.status === 'archived';
@@ -1502,7 +1503,10 @@ function App() {
                 handleToggleArchive={handleToggleArchive}
                 handlePermanentDelete={handlePermanentDelete}
                 handleResetReference={handleResetReference}
-                handleForceUnlock={handleForceUnlock}
+                handleForceUnlock={(pid) => handleForceUnlock(pid, () => {
+                  // 탈취 성공 시 본인 세션이 해당 프로젝트라면 편집 모드로 승격
+                  setActiveProject(prev => (prev?.id === pid) ? { ...prev, mode: 'edit', forceLock: true } : prev);
+                })}
                 globalIpDictionary={globalIpDictionary}
                 customIpDetails={customIpDetails}
                 handleEditCustomIp={handleEditCustomIp}
@@ -1568,7 +1572,10 @@ function App() {
               handleTabClick={handleTabClick}
               handleTabSubmit={handleTabSubmit}
               handleEditingStateChange={handleEditingStateChange}
-              handleForceUnlock={handleForceUnlock}
+              handleForceUnlock={(pid) => handleForceUnlock(pid, () => {
+                // 내부 탈취 성공 시 본인 세션을 즉시 편집 모드로 승격하여 useProjectLock 활성화
+                setActiveProject(prev => (prev?.id === pid) ? { ...prev, mode: 'edit', forceLock: true } : prev);
+              })}
               handleAddCustomIp={handleAddCustomIp}
               handleFormDirtyChange={handleFormDirtyChange}
               showConfirm={showConfirm}
