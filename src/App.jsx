@@ -310,6 +310,7 @@ function App() {
     activeProject,
     currentUser,
     projectsList,
+    setProjectsList, // [V1.3.1 Hotfix] 낙관적 업데이트 지원
     isDemoMode,
     showConfirm
   });
@@ -541,7 +542,7 @@ function App() {
 
 
 
-  const openWorkspace = async (projectId, phase, targetTab = 'Project_Overview', targetIp = null, mode = null) => {
+  const openWorkspace = async (projectId, phase, targetTab = 'Project_Overview', targetIp = null, mode = null, force = false) => {
     const proj = projectsList.find(p => p.id === projectId);
     if (!proj) return;
 
@@ -580,13 +581,42 @@ function App() {
 
     // [중요] 이전 상태(lockDetail)가 아닌, 방금 가져온 데이터로만 잠금 분석
     const detail = getLockDetail(data);
-
-    // 모드 결정 로직 강화: 요청한 모드가 'edit'이라도 실제 서버 상태가 타인 점유 중이면 readonly로 보호
     let finalMode = mode;
-    if (finalMode === 'edit') {
-      if (detail.isLocked && !detail.isByMe && !detail.isStale) {
-        console.warn('⚠️ [Collision] 편집 모드 진입을 시도했으나 타인이 이미 점유 중입니다. 읽기 전용으로 전환합니다.');
-        finalMode = 'readonly';
+
+    // [V1.3.1] 의도 기반 진입 제어 로직 (협업 중심 문구 개선)
+    if (finalMode === 'edit' && detail.isLocked && !detail.isByMe && !force) {
+      if (detail.isStale) {
+        // [케이스 A] 정체된 잠금
+        const confirmed = await showConfirm({
+          title: "편집 권한 갱신 확인",
+          message: `${detail.lockedBy}님이 한동안 활동이 없었습니다.\n기존 잠금을 해제하고 현재 편집 권한을 가져오시겠습니까?`,
+          type: "warning",
+          confirmText: "권한 가져오기",
+          cancelText: "읽기 전용으로 접속"
+        });
+
+        if (confirmed) {
+          openWorkspace(projectId, phase, targetTab, targetIp, 'edit', true);
+        } else {
+          openWorkspace(projectId, phase, targetTab, targetIp, 'readonly');
+        }
+        return; 
+      } else {
+        // [케이스 B] 활성 잠금
+        const confirmed = await showConfirm({
+          title: "프로젝트 편집 권한 안내",
+          message: `${detail.lockedBy}님이 현재 활발히 편집 중입니다.\n지금 권한을 가져오면 상대방의 작업 내용이 저장되지 않을 수 있습니다.\n\n정말 편집 권한을 가져오시겠습니까?`,
+          type: "danger",
+          confirmText: "위험 감수하고 가져오기",
+          cancelText: "읽기 전용으로 접속"
+        });
+
+        if (confirmed) {
+          openWorkspace(projectId, phase, targetTab, targetIp, 'edit', true);
+        } else {
+          openWorkspace(projectId, phase, targetTab, targetIp, 'readonly');
+        }
+        return;
       }
     } else if (!finalMode) {
       // 모드가 지정되지 않은 경우 자동 판별
@@ -594,7 +624,6 @@ function App() {
     }
 
     setProjectData(data.project_data);
-    // [수정] 판정 로직 강화: 타입 및 공백 차이로 인한 Historical View 오판 방지
     const isLatest = String(phase).trim() === String(proj.latest_evt || 'EVT0').trim();
 
     setActiveProject({
@@ -603,7 +632,8 @@ function App() {
       evt: phase,
       isLatest: isLatest,
       updated: proj.updated,
-      mode: finalMode
+      mode: finalMode,
+      forceLock: force // [V1.3.1] 원자적 잠금 탈취 플래그 전달
     });
 
     setCurrentViewedRevision(phase);
@@ -614,7 +644,7 @@ function App() {
     originalDataSnapshot.current = null;
 
     window.history.pushState({ type: 'WORKSPACE', projectId, phase }, '', '#workspace');
-    setIsFormDirty(false); // 새 프로젝트 진입 시 상태 초기화
+    setIsFormDirty(false); 
     setViewState('WORKSPACE');
   };
 

@@ -45,17 +45,17 @@ export default function ProjectCard({
 
   // [Bug #5 Fix] 잠금 정보 메모이제이션 및 시각적 노이즈 제거
   const lockInfo = React.useMemo(() => {
-    if (!project.is_locked || !project.locked_at) return { show: false };
-    
-    // 본인이 점유한 경우 대시보드에서는 배너를 숨김 (사용자 요청: 논리적 명확성 확보)
-    if (project.locked_by === currentUser) return { show: false };
+    if (!project.is_locked || !project.locked_at) return { show: false, isStale: false };
     
     const lockTime = new Date(project.locked_at).getTime();
     const diffMins = Math.floor((Date.now() - lockTime) / (1000 * 60));
     const isStale = diffMins >= 10;
     
+    // 본인이 점유한 경우 대시보드에서는 배너를 숨김 (사용자 요청: 논리적 명확성 확보)
+    const show = (project.locked_by !== currentUser);
+    
     return {
-      show: true,
+      show,
       isStale,
       minutes: diffMins,
       // 문구 개선: "마지막 활동" 명시 및 권한 회수 안내
@@ -215,7 +215,7 @@ export default function ProjectCard({
                   }}
                   className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-amber-50 flex items-center gap-2 text-amber-600 border-t border-slate-100"
                 >
-                  <UnlockIcon size={14}/> {lockStatus.isStale ? '정체된 잠금 강제 해제' : '편집 잠금 강제 해제'}
+                  <UnlockIcon size={14}/> {lockInfo.isStale ? '정체된 잠금 강제 해제' : '편집 잠금 강제 해제'}
                 </button>
               )}
             </div>
@@ -235,19 +235,13 @@ export default function ProjectCard({
         {/* 주요 액션 버튼 영역 */}
         <div className="flex flex-col gap-2">
           {isLockedByOther ? (
-            // 1. 타인이 점유 중일 때: 읽기 전용 진입 + 권한 가져오기(Takeover)
+            // [UX 하드닝] 타인이 점유 중일 때: 목록에서 권한을 탈취하는 대신 '접속 시도'로 유도 (진입 시 모달에서 결정)
             <div className="flex flex-col gap-2">
               <button
-                onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Project_Overview', null, 'readonly')}
-                className="w-full flex items-center justify-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all"
+                onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Project_Overview', null, 'edit')}
+                className="w-full flex items-center justify-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition-all shadow-sm active:scale-95"
               >
-                <Clock size={16} /> {project.latest_evt} 읽기 전용 접속
-              </button>
-              <button
-                onClick={() => onUnlock(project)}
-                className="w-full flex items-center justify-center gap-2 text-[11px] font-extrabold px-4 py-2 text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 rounded-xl transition-all shadow-sm"
-              >
-                <UnlockIcon size={14} /> 편집 권한 가져오기 (Takeover)
+                <Clock size={16} /> {project.latest_evt} 접속 시도 (잠김)
               </button>
             </div>
           ) : (

@@ -86,22 +86,32 @@ export const projectService = {
 
   /**
    * [의도 기반 API] 프로젝트 잠금 획득 (Atomic Acquire)
+   * @param {string} projectId
+   * @param {string} userId
+   * @param {boolean} force - 활성 잠금이라도 강제로 탈취할지 여부 (Atomic Seizure)
    */
-  async acquireLock(projectId, userId, lockTime = null) {
+  async acquireLock(projectId, userId, force = false, lockTime = null) {
     const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const newLockTime = lockTime || new Date().toISOString();
 
-    return await supabase
+    let query = supabase
       .from('projects')
       .update({ 
         is_locked: true, 
         locked_by: userId, 
         locked_at: newLockTime 
       })
-      .eq('id', projectId)
-      // [원자적 잠금] 아무도 잠그지 않았거나, 내가 이미 잠갔거나, 잠금이 정체(Stale)된 경우에만 성공
-      .or(`locked_by.is.null,locked_by.eq.${userId},locked_at.lt.${staleThreshold}`)
-      .select('*', { count: 'exact' });
+      .eq('id', projectId);
+
+    if (force) {
+      // [Atomic Seizure] 강제 탈취 시에는 소유자 조건을 체크하지 않고 단일 쿼리로 덮어씀
+      // 이는 '해제 후 획득' 시 발생하는 TOCTOU 레이스 컨디션을 근본적으로 차단함
+    } else {
+      // [일반 획득] 아무도 잠그지 않았거나, 내가 이미 잠갔거나, 잠금이 정체(Stale)된 경우에만 성공
+      query = query.or(`locked_by.is.null,locked_by.eq.${userId},locked_at.lt.${staleThreshold}`);
+    }
+
+    return await query.select('*', { count: 'exact' });
   },
 
   /**
@@ -148,7 +158,7 @@ export const projectService = {
    */
   async setProjectLock(projectId, isLocked, userId, lockTime = null) {
     if (isLocked) {
-      return this.acquireLock(projectId, userId, lockTime);
+      return this.acquireLock(projectId, userId, false, lockTime);
     } else {
       // [Bug #3 Fix] userId가 null인 경우 강제 해제(force)로 간주하여 처리
       if (!userId) {

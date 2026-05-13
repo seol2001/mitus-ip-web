@@ -7,7 +7,7 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5분
 /**
  * 프로젝트 잠금 및 하트비트 관리 훅
  */
-export function useProjectLock({ activeProject, currentUser, projectsList, isDemoMode, showConfirm }) {
+export function useProjectLock({ activeProject, currentUser, projectsList, setProjectsList, isDemoMode, showConfirm }) {
   // Refs for stable closure in interval/event listeners
   const activeProjectRef = useRef(activeProject);
   const currentUserRef = useRef(currentUser);
@@ -71,9 +71,9 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
 
     const acquireLock = async () => {
       // 서버에서 최신 상태 다시 확인 (Double Check)
-      const { data } = await projectService.fetchProjectDetail(activeProject.id);
-      if (data) {
-        const detail = getLockDetail(data);
+      const { data: detailData } = await projectService.fetchProjectDetail(activeProject.id);
+      if (detailData) {
+        const detail = getLockDetail(detailData);
         
         let lockAttempted = false;
         if (!detail.isLocked || detail.isByMe) {
@@ -82,13 +82,22 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
         } else if (detail.isStale) {
           console.log('♻️ [Lock] 정체된 잠금 발견, Takeover 시도...');
           lockAttempted = true;
+        } else if (activeProject.forceLock) {
+          console.log('🔥 [Lock] 활성 잠금 강제 탈취(Atomic Seizure) 시도...');
+          lockAttempted = true;
         } else {
-          console.warn('🚫 [Lock] 타인이 이미 편집 중입니다. 편집 모드를 해제합니다.');
+          console.warn('🚫 [Lock] 타인이 이미 편집 중이며 강제 탈취 옵션이 꺼져 있습니다. 편집 모드를 해제합니다.');
         }
 
         if (lockAttempted) {
-          // [Bug #4 Fix] 원자적 업데이트 결과를 확인하여 Race Condition 방지
-          const { count, error } = await projectService.acquireLock(activeProject.id, currentUser);
+          // [V1.3] 원자적 업데이트 결과를 확인하여 Race Condition 방지
+          // forceLock 플래그를 전달하여 단일 쿼리로 원자적 탈취(Atomic Seizure) 수행
+          const { count, error, data } = await projectService.acquireLock(
+            activeProject.id, 
+            currentUser, 
+            !!activeProject.forceLock
+          );
+
           if (error || count === 0) {
             console.error('🚫 [Lock] 원자적 잠금 획득 실패 (Race Condition 패배 또는 RLS 차단).', error);
             showConfirmRef.current({
@@ -99,13 +108,21 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
             });
           } else {
             console.log('✅ [Lock] 원자적 잠금 획득 성공!');
+            
+            // [V1.3 Bug Fix] 낙관적 업데이트 (Optimistic Update)
+            // 리얼타임 이벤트를 기다리지 않고 로컬 projectsList를 즉시 업데이트하여 '본인에게 뜨는 상실 모달' 방지
+            if (setProjectsList && data && data.length > 0) {
+              setProjectsList(prev => prev.map(p => 
+                p.id === activeProject.id ? { ...p, ...data[0] } : p
+              ));
+            }
           }
         }
       }
     };
 
     acquireLock();
-  }, [activeProject?.id, activeProject?.mode, currentUser, isDemoMode, getLockDetail]);
+  }, [activeProject?.id, activeProject?.mode, activeProject?.forceLock, currentUser, isDemoMode, getLockDetail, setProjectsList]);
 
   /**
    * 하트비트 로직
@@ -144,6 +161,11 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
    * [Bug #4 Fix] 실시간 잠금 상실 즉각 대응 (Realtime 반응)
    */
   useEffect(() => {
+    // [V1.3.1 Hotfix] 가드 조건 세밀화
+    // 1. 방금 진입 중(forceLock)이면서, 아직 DB 소유자가 '나'로 인식되지 않은 '찰나'에만 모달을 억제합니다.
+    // 2. 만약 DB 소유자가 '나'로 이미 인식되었다면(isByMe: true), 그때부터는 가드를 풀고 남이 뺏어갈 때 경고를 띄워야 합니다.
+    if (activeProject?.forceLock && !lockDetail.isByMe) return;
+
     if (isSessionLockedByOther && activeProject?.mode === 'edit') {
       console.warn('⚠️ [Realtime] 잠금 권한이 상실되었습니다.');
       showConfirmRef.current({
@@ -153,7 +175,7 @@ export function useProjectLock({ activeProject, currentUser, projectsList, isDem
         showCancel: false
       });
     }
-  }, [isSessionLockedByOther, activeProject?.mode, lockDetail.lockedBy]);
+  }, [isSessionLockedByOther, activeProject?.mode, activeProject?.forceLock, lockDetail.isByMe, lockDetail.lockedBy]);
 
   /**
    * 브라우저 종료 시 잠금 해제 (Cleanup)
