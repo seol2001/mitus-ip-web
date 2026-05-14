@@ -63,35 +63,44 @@ export default function IssueForm({
     }
   }, [initialData, editingId]);
 
-  // 실시간 데이터 동기화: 내부 formData가 변하면 즉시 부모에게 보고
-  useEffect(() => {
-    if (onChange) {
-      onChange(formData);
-    }
-  }, [formData, onChange]);
+  // ── [제거] 무한 루프 원인이 되는 실시간 자동 동기화 useEffect ──
+  // 대신 handleInput 및 개별 변경 핸들러에서 명시적으로 onChange를 호출함
 
   // Business Logic: Fixed -> Closed sync
   useEffect(() => {
+    // 1. Fixed 상태인 경우 무조건 Closed로 동기화 (단, 이미 Closed가 아닐 때만)
     if (formData.assessment === 'Fixed') {
       if (formData.disposition !== 'Closed') {
-        setFormData(prev => ({ ...prev, disposition: 'Closed' }));
+        setFormData(prev => {
+          const next = { ...prev, disposition: 'Closed' };
+          if (onChange) onChange(next);
+          return next;
+        });
       }
-    } else if (formData.entryMode === 'eval' && formData.disposition === 'Closed') {
-      // Fixed에서 다른 상태로 변경 시 Disposition 초기화 (Closed가 아닌 Revision 등 기본값으로)
-      setFormData(prev => ({ ...prev, disposition: 'Revision' }));
+    } 
+    // 2. Eval 모드에서 Closed인 경우 Revision으로 복구 (단, 이미 Revision이 아닐 때만)
+    else if (formData.entryMode === 'eval' && formData.disposition === 'Closed') {
+      setFormData(prev => {
+        const next = { ...prev, disposition: 'Revision' };
+        if (onChange) onChange(next);
+        return next;
+      });
     }
-  }, [formData.assessment, formData.entryMode]);
+  }, [formData.assessment, formData.entryMode, formData.disposition, onChange]);
 
   const handleInput = (e) => {
     const { name, value } = e.target;
-    setFormData(p => ({ ...p, [name]: value }));
+    const nextData = { ...formData, [name]: value };
+    setFormData(nextData);
+    if (onChange) onChange(nextData);
   };
 
   const handleTypeToggle = (t) => {
-    setFormData(p => {
-      const cur = p.types || [];
-      return { ...p, types: cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t] };
-    });
+    const cur = formData.types || [];
+    const nextTypes = cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t];
+    const nextData = { ...formData, types: nextTypes };
+    setFormData(nextData);
+    if (onChange) onChange(nextData);
   };
 
   const renderHistoricalContext = (id) => {
@@ -190,11 +199,14 @@ export default function IssueForm({
                 const ex = issues.find(i => i.entryMode === 'reopen' && i.targetIssue === v);
                 if (ex) { 
                   setFormData(ex); 
+                  if (onChange) onChange(ex);
                   if (onSetEditingId) onSetEditingId(ex.id);
                 } 
                 else { 
                   const pv = latestIssueStates[v] || {}; 
-                  setFormData({ ...makeDefaultForm(formData.ipBlock, stage), entryMode: 'reopen', targetIssue: v, severity: pv.severity || 'Major', phenomenon: pv.phenomenon || '', rootCause: pv.rootCause || '', disposition: 'Revision' }); 
+                  const nextData = { ...makeDefaultForm(formData.ipBlock, stage), entryMode: 'reopen', targetIssue: v, severity: pv.severity || 'Major', phenomenon: pv.phenomenon || '', rootCause: pv.rootCause || '', disposition: 'Revision' };
+                  setFormData(nextData); 
+                  if (onChange) onChange(nextData);
                   if (onSetEditingId) onSetEditingId(null);
                 }
               }} className={`w-full font-mono ${ic}`}>
@@ -230,7 +242,11 @@ export default function IssueForm({
               {ipIndexData && ipIndexData[currentSelectedIp] && ipIndexData[currentSelectedIp].Sub_Blocks && ipIndexData[currentSelectedIp].Sub_Blocks.length > 0 && (
                 <div className="w-full sm:w-[30%] shrink-0">
                   <label className={lc}>Sub-Block / Issue Level</label>
-                  <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => setFormData(p => ({ ...p, subBlock: e.target.value || null }))} className={`w-full ${ic}`} disabled={isReadOnly}>
+                  <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => {
+                    const nextData = { ...formData, subBlock: e.target.value || null };
+                    setFormData(nextData);
+                    if (onChange) onChange(nextData);
+                  }} className={`w-full ${ic}`} disabled={isReadOnly}>
                     <option value="">[Top-Level / System Overall]</option>
                     {ipIndexData[currentSelectedIp].Sub_Blocks.map(sb => (
                       <option key={sb.id} value={sb.name}>{sb.name}</option>
@@ -245,18 +261,24 @@ export default function IssueForm({
                     onChange={(e) => { 
                       const v = e.target.value; 
                       if (v === 'NEW') { 
-                        setFormData({ ...makeDefaultForm(formData.ipBlock, stage), issueNum: calcNextNum(formData.ipBlock, latestIssueStates) }); 
-                        if (onSetEditingId) onSetEditingId(null); // 신규 모드로 명시적 전환
+                        const nextData = { ...makeDefaultForm(formData.ipBlock, stage), issueNum: calcNextNum(formData.ipBlock, latestIssueStates) };
+                        setFormData(nextData); 
+                        if (onChange) onChange(nextData);
+                        if (onSetEditingId) onSetEditingId(null); 
                       } 
                       else if (v === 'DIRECT') { 
-                        setFormData(p => ({ ...p, issueNum: '' })); 
+                        const nextData = { ...formData, issueNum: '' };
+                        setFormData(nextData); 
+                        if (onChange) onChange(nextData);
                         if (onSetEditingId) onSetEditingId(null);
                       } 
                       else { 
                         const ex = issues.find(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === v); 
                         if (ex) { 
-                          setFormData({ ...ex, types: ex.types || [] }); 
-                          if (onSetEditingId) onSetEditingId(ex.id); // 기존 이슈 선택 시 부모의 editingId 동기화 (Bug #3 해결)
+                          const nextData = { ...ex, types: ex.types || [] };
+                          setFormData(nextData); 
+                          if (onChange) onChange(nextData);
+                          if (onSetEditingId) onSetEditingId(ex.id); 
                         } 
                       } 
                     }} className={`w-[55%] ${ic}`}>
@@ -267,8 +289,17 @@ export default function IssueForm({
                   <input type="text" name="issueNum" value={formData.issueNum} onChange={(e) => {
                      const v = e.target.value; 
                      const ex = issues.find(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock && i.issueNum === v); 
-                     if (ex) { setFormData({ ...ex, types: ex.types || [] }); } 
-                     else { setFormData(p => ({ ...p, issueNum: v })); } 
+                     if (ex) { 
+                       const nextData = { ...ex, types: ex.types || [] };
+                       setFormData(nextData); 
+                       if (onChange) onChange(nextData);
+                       if (onSetEditingId) onSetEditingId(ex.id);
+                     } 
+                     else { 
+                       const nextData = { ...formData, issueNum: v };
+                       setFormData(nextData); 
+                       if (onChange) onChange(nextData);
+                     } 
                    }} className={`w-[45%] h-10 px-3 py-2 min-w-0 text-sm outline-none rounded-md ${editingId && mode === 'new' ? 'bg-blue-50 border border-blue-400 text-blue-700 font-bold' : 'bg-white text-gray-800 border border-gray-300 focus:border-blue-500'}`} placeholder="e.g. ISSUE#1" />
                 </div>
               </div>
@@ -290,7 +321,12 @@ export default function IssueForm({
                 <div className="flex items-center gap-2 text-orange-800 font-semibold text-sm"><AlertCircle size={14} /> Latent Issue Details</div>
                 <div><label className="block text-sm font-semibold mb-1 text-orange-900">Origin</label>
                   <div className="flex gap-2">
-                    <select value={formData.origin || ''} onChange={(e) => { const v = e.target.value; setFormData(p => ({ ...p, origin: v })); }} className={`w-full ${ic}`}>
+                    <select value={formData.origin || ''} onChange={(e) => { 
+                      const v = e.target.value; 
+                      const nextData = { ...formData, origin: v };
+                      setFormData(nextData); 
+                      if (onChange) onChange(nextData);
+                    }} className={`w-full ${ic}`}>
                       <option value="">차수 선택</option>{availOrigins.map(s => <option key={s} value={s}>{s}</option>)}<option value="Direct">직접 입력...</option>
                     </select>
                   </div>
@@ -303,7 +339,12 @@ export default function IssueForm({
                 <div className="flex items-center gap-2 text-purple-800 font-semibold text-sm"><AlertCircle size={14} /> Side Effect Details</div>
                 <div><label className="block text-sm font-semibold mb-1 text-purple-900">Source of side effect</label>
                   <div className="flex gap-2">
-                    <select value={formData.sideEffectSource || ''} onChange={(e) => { const v = e.target.value; setFormData(p => ({ ...p, sideEffectSource: v })); }} className={`w-full ${ic}`}>
+                    <select value={formData.sideEffectSource || ''} onChange={(e) => { 
+                      const v = e.target.value; 
+                      const nextData = { ...formData, sideEffectSource: v };
+                      setFormData(nextData); 
+                      if (onChange) onChange(nextData);
+                    }} className={`w-full ${ic}`}>
                       <option value="">이슈 선택(Revision 항목)</option>{sortedRevIds.map(id => <option key={id} value={id}>{id}</option>)}<option value="Direct">직접 입력...</option>
                     </select>
                   </div>
@@ -349,6 +390,7 @@ export default function IssueForm({
                 const ex = issues.find(i => i.entryMode === 'carryover' && i.targetIssue === v);
                 if (ex) { 
                   setFormData(ex); 
+                  if (onChange) onChange(ex);
                   if (onSetEditingId) onSetEditingId(ex.id);
                 } else {
                   let originMeta = {};
@@ -359,7 +401,9 @@ export default function IssueForm({
                     });
                     if (found) { originMeta = { ipBlock: found.ipBlock, severity: found.severity, phenomenon: found.phenomenon || '', rootCause: found.rootCause || '', disposition: found.disposition || 'Revision' }; break; }
                   }
-                  setFormData({ ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage), targetIssue: v, ...originMeta });
+                  const nextData = { ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage), targetIssue: v, ...originMeta };
+                  setFormData(nextData);
+                  if (onChange) onChange(nextData);
                   if (onSetEditingId) onSetEditingId(null);
                 }
               }} className={`w-full font-mono ${ic}`}>
@@ -408,6 +452,7 @@ export default function IssueForm({
                 const ex = issues.find(i => i.entryMode === 'eval' && i.targetIssue === v);
                 if (ex) { 
                   setFormData(ex); 
+                  if (onChange) onChange(ex);
                   if (onSetEditingId) onSetEditingId(ex.id);
                 } else {
                   let originMeta = {};
@@ -418,7 +463,9 @@ export default function IssueForm({
                     });
                     if (found) { originMeta = { ipBlock: found.ipBlock, severity: found.severity }; break; }
                   }
-                  setFormData({ ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage), targetIssue: v, assessment: 'Fixed', ...originMeta });
+                  const nextData = { ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage), targetIssue: v, assessment: 'Fixed', ...originMeta };
+                  setFormData(nextData);
+                  if (onChange) onChange(nextData);
                   if (onSetEditingId) onSetEditingId(null);
                 }
               }} className={`w-full font-mono ${ic}`}>

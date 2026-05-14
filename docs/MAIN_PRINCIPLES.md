@@ -30,13 +30,14 @@
 
 ---
 
-## 🚀 3. Git 자동화 배포 프로토콜 (Release Automation)
-
-수정 완료 후 사용자 승인 시 다음 과정을 자동으로 수행한다.
-1.  **Version Up**: `DashboardHeader.jsx` 내 UI 버전 문자열 업데이트.
-2.  **Log Recording**: `CHANGELOG.md` 내 버전별 히스토리 기록.
-3.  **Git Tagging**: `git commit` 및 SemVer 기반의 `git tag` (예: `v1.3.3`) 생성.
-4.  **Cloud Sync**: GitHub 원격 저장소로 코드와 태그 전송.
+### 3. Git 자동화 및 릴리즈 프로토콜 (Release Automation)
+- **버전 프리징 요청 시 자동 수행 항목**:
+    1. `DashboardHeader.jsx` 내 버전 문자열 업데이트.
+    2. `CHANGELOG.md` 내 수정 히스토리 기록.
+    3. 로컬 `git commit` 및 `git tag` 생성.
+- **Push 원칙 (Strict Approval)**:
+    - **절대 금지**: 사용자 승인 없는 `git push`는 어떠한 경우에도 금지한다.
+    - **수행 방식**: 로컬 커밋/태그 완료 후, 사용자에게 Push 여부를 확인받은 뒤 승인 시에만 `git push origin [branch/tag]`를 수행한다.
 
 ---
 

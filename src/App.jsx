@@ -103,7 +103,7 @@ function App() {
       if (customIpsData) {
         setCustomIpDetails(customIpsData);
         setGlobalIpDictionary(prev => {
-          const newDict = JSON.parse(JSON.stringify(prev));
+          const newDict = structuredClone(prev);
           customIpsData.forEach(cip => {
             if (!newDict[cip.category]) newDict[cip.category] = [];
             if (!newDict[cip.category].includes(cip.name)) newDict[cip.category].push(cip.name);
@@ -158,7 +158,20 @@ function App() {
         if (eventType === 'INSERT') {
           setProjectsList(prev => prev.some(p => p.id === newRecord.id) ? prev : [newRecord, ...prev]);
         } else if (eventType === 'UPDATE') {
-          setProjectsList(prev => prev.map(p => p.id === newRecord.id ? { ...p, ...newRecord } : p));
+          // [버그1 픽스] Race Condition 방어: Realtime UPDATE가 handleTabSubmit의
+          // 낙관적 로컬 업데이트(setProjectsList)보다 오래된 데이터를 가져올 경우
+          // 로컬의 최신 상태를 보호하기 위해 타임스탬프를 비교함.
+          setProjectsList(prev => prev.map(p => {
+            if (p.id !== newRecord.id) return p;
+            // 로컬 상태가 더 최신이면(updated_at이 더 크면) Realtime 데이터 무시
+            const localTime = p.updated ? new Date(p.updated).getTime() : 0;
+            const remoteTime = newRecord.updated ? new Date(newRecord.updated).getTime() : 0;
+            if (localTime > remoteTime) {
+              console.log('🛡️ [Realtime Guard] 로컬 상태가 더 최신이므로 Realtime 업데이트 무시:', p.id);
+              return p;
+            }
+            return { ...p, ...newRecord };
+          }));
         } else if (eventType === 'DELETE') {
           setProjectsList(prev => prev.filter(p => p.id !== oldRecord.id));
         }
@@ -179,7 +192,7 @@ function App() {
       const newIp = { id: Date.now().toString(), category, name, description, created_by: currentUser, created_at: new Date().toISOString() };
       setCustomIpDetails(prev => [...prev, newIp]);
       setGlobalIpDictionary(prev => {
-        const newDict = JSON.parse(JSON.stringify(prev));
+        const newDict = structuredClone(prev);
         if (!newDict[category]) newDict[category] = [];
         if (!newDict[category].includes(name)) newDict[category].push(name);
         return newDict;
@@ -199,7 +212,7 @@ function App() {
       const newIp = data[0];
       setCustomIpDetails(prev => [...prev, newIp]);
       setGlobalIpDictionary(prev => {
-        const newDict = JSON.parse(JSON.stringify(prev));
+        const newDict = structuredClone(prev);
         if (!newDict[category]) newDict[category] = [];
         if (!newDict[category].includes(name)) newDict[category].push(name);
         return newDict;
@@ -216,7 +229,7 @@ function App() {
       setCustomIpDetails(prev => prev.map(ip => ip.id === id ? { ...ip, ...updatedData } : ip));
       if (updatedData.name && (updatedData.name !== targetIp.name || updatedData.category !== targetIp.category)) {
         setGlobalIpDictionary(prev => {
-          const newDict = JSON.parse(JSON.stringify(prev));
+          const newDict = structuredClone(prev);
           // Remove old
           if (newDict[targetIp.category]) {
             newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
@@ -245,7 +258,7 @@ function App() {
       setCustomIpDetails(prev => prev.map(ip => ip.id === id ? data[0] : ip));
       if (updatedData.name && (updatedData.name !== targetIp.name || updatedData.category !== targetIp.category)) {
         setGlobalIpDictionary(prev => {
-          const newDict = JSON.parse(JSON.stringify(prev));
+          const newDict = structuredClone(prev);
           // Remove old
           if (newDict[targetIp.category]) {
             newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
@@ -270,7 +283,7 @@ function App() {
     if (isDemoMode) {
       setCustomIpDetails(prev => prev.filter(ip => ip.id !== id));
       setGlobalIpDictionary(prev => {
-        const newDict = JSON.parse(JSON.stringify(prev));
+        const newDict = structuredClone(prev);
         if (newDict[targetIp.category]) {
           newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
           if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
@@ -289,7 +302,7 @@ function App() {
 
     setCustomIpDetails(prev => prev.filter(ip => ip.id !== id));
     setGlobalIpDictionary(prev => {
-      const newDict = JSON.parse(JSON.stringify(prev));
+      const newDict = structuredClone(prev);
       if (newDict[targetIp.category]) {
         newDict[targetIp.category] = newDict[targetIp.category].filter(n => n !== targetIp.name);
         if (newDict[targetIp.category].length === 0) delete newDict[targetIp.category];
@@ -303,6 +316,7 @@ function App() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('Project_Overview');
+  const [rollbackCounter, setRollbackCounter] = useState(0); // 롤백 시 자식 컴포넌트 강제 리팩토링을 위한 카운터
   const [initialIpForIpIndex, setInitialIpForIpIndex] = useState(null);
   const tabs = ['Project_Overview', 'IP_Index', 'Revision_Log', 'FA_Report'];
 
@@ -428,7 +442,8 @@ function App() {
     setIsGloballyEditing(isEditing);
     if (isEditing) {
       const currentSnap = latestDataRef.current?.revisions[currentViewedRevision];
-      originalDataSnapshot.current = currentSnap ? JSON.parse(JSON.stringify(currentSnap)) : null;
+      // [보안/성능] structuredClone을 사용하여 데이터 무결성 보장 (기존 JSON 방식 대체)
+      originalDataSnapshot.current = currentSnap ? structuredClone(currentSnap) : null;
       isDirtyRef.current = false;
     } else {
       isDirtyRef.current = false;
@@ -436,7 +451,63 @@ function App() {
     }
   }, [currentViewedRevision]);
 
-  const handleTabSubmit = useCallback(async (tabName, newData, forceDirty = false) => {
+  // ─── [신규] 변경 사항 폐기 및 원래 상태로 복구 (Rollback) ───
+  const discardProjectChanges = useCallback(() => {
+    if (originalDataSnapshot.current) {
+      setProjectData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          revisions: {
+            ...prev.revisions,
+            [currentViewedRevision]: structuredClone(originalDataSnapshot.current)
+          }
+        };
+      });
+      // [버그2 픽스] setRollbackCounter 제거: 강제 리마운트가 tabRef를 무효화시켜
+      // 이후 resetForm 호출 시 Blank 화면을 유발하는 근본 원인이었음.
+      // 스냅샷 데이터 복원만으로 충분히 UI가 원상 복구됨.
+      originalDataSnapshot.current = null;
+      isDirtyRef.current = false;
+      setIsFormDirty(false);
+      isFormDirtySyncRef.current = false;
+    }
+  }, [currentViewedRevision]);
+
+  // ─── [신규] 명시적 저장 패턴 적용: 로컬 상태만 업데이트 (DB 저장 없음) ───
+  const handleLocalUpdate = useCallback((tabName, newData, forceDirty = true) => {
+    // [버그2 근본 수정] 스냅샷을 setProjectData 업데이터 내부의 prev로 캡처.
+    // latestDataRef는 useEffect로 동기화되어 타이밍 문제가 있지만,
+    // 업데이터의 prev는 React가 보장하는 진짜 현재 상태임.
+    setProjectData(prev => {
+      if (!prev) return prev;
+
+      // 스냅샷이 없으면 지금 prev(수정 전 상태)를 원본으로 캡처
+      if (!originalDataSnapshot.current) {
+        const currentSnap = prev.revisions?.[currentViewedRevision];
+        originalDataSnapshot.current = currentSnap ? structuredClone(currentSnap) : null;
+      }
+
+      return {
+        ...prev,
+        revisions: {
+          ...prev.revisions,
+          [currentViewedRevision]: {
+            ...(prev.revisions?.[currentViewedRevision] || {}),
+            [tabName]: newData
+          }
+        }
+      };
+    });
+
+    if (forceDirty) {
+      isDirtyRef.current = true;
+      setIsFormDirty(true);
+      isFormDirtySyncRef.current = true;
+    }
+  }, [currentViewedRevision]);
+
+  const handleTabSubmit = useCallback(async (tabName, newData, clearDirty = false) => {
     if (isArchived) {
       showConfirm({
         title: "수정 불가",
@@ -462,22 +533,25 @@ function App() {
       }
 
       // 1. 로컬 상태 업데이트 및 최신 데이터 캡처
-      let latestUpdatedData = null;
-      setProjectData(prev => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          revisions: {
-            ...prev.revisions,
-            [currentRevisionId]: {
-              ...(prev.revisions?.[currentRevisionId] || {}),
-              [tabName]: newData
-            }
+      // [버그1 근본 수정] latestUpdatedData를 setProjectData 업데이터 내부에서 캡처하는 방식은
+      // React 18 Concurrent Mode에서 업데이터가 지연 실행될 경우 null이 될 수 있음.
+      // 대신 latestDataRef(최신 렌더 상태)를 직접 병합하여 동기적으로 구성.
+      const prevData = latestDataRef.current;
+      const latestUpdatedData = prevData ? {
+        ...prevData,
+        revisions: {
+          ...prevData.revisions,
+          [currentRevisionId]: {
+            ...(prevData.revisions?.[currentRevisionId] || {}),
+            [tabName]: newData
           }
-        };
-        latestUpdatedData = updated;
-        return updated;
-      });
+        }
+      } : null;
+
+      // 로컬 상태도 동일하게 업데이트
+      if (latestUpdatedData) {
+        setProjectData(latestUpdatedData);
+      }
 
       // 2. 비동기 DB 저장 프로세스
       if (latestUpdatedData) {
@@ -530,11 +604,17 @@ function App() {
         }
       }
 
-      if (isGloballyEditing || forceDirty) {
-        isDirtyRef.current = true;
+      if (clearDirty) {
+        // [자동 저장용] 저장이 완료되었으므로 더티 상태를 해제하여 모달이 뜨지 않도록 함
+        isDirtyRef.current = false;
+        setIsFormDirty(false);
+        isFormDirtySyncRef.current = false;
+      } else if (isGloballyEditing) {
+        // [명시적 저장용] 저장이 완료되어도 락이 걸려있는 한 글로벌 에디팅 상태 유지
+        isDirtyRef.current = false; 
+        setIsFormDirty(false);
+        isFormDirtySyncRef.current = false;
       }
-      setIsFormDirty(false);
-      isFormDirtySyncRef.current = false;
     } catch (err) {
       console.error('❌ [Unexpected Error during handleTabSubmit]:', err);
     } finally {
@@ -552,26 +632,32 @@ function App() {
 
     if (isInternalDirty || (isGloballyEditing && isDirtyRef.current) || isFormDirtySyncRef.current) {
       canProceed = await showConfirm({
-        title: "입력 내용 초기화",
-        message: "작성 중인 내용이 모두 사라집니다. 초기화할까요?",
-        confirmText: "초기화",
-        cancelText: "취소",
+        title: "변경 사항을 취소하시겠습니까?",
+        message: "마지막으로 저장된 데이터로 안전하게 복구됩니다.",
+        confirmText: "원래 상태로 복구",
+        cancelText: "계속 수정하기",
         type: "warning"
       });
     }
 
     if (canProceed) {
-      // [추가] 초기화 승인 시 탭 내부 폼 데이터 명시적 리셋
+      // [버그2 최종 수정] AnimatePresence mode="sync"와 함께 적용.
+      // 탭 전환(setActiveTab)을 먼저 실행하여 새 탭을 마운트하고,
+      // 데이터 복원(discardProjectChanges)은 requestAnimationFrame으로
+      // 다음 페인트 사이클에 분리하여 exit 중인 컴포넌트와의 충돌을 원천 차단.
       tabRef.current?.resetForm?.();
-
-      // 이동 시 상태 초기화
       setIsGloballyEditing(false);
       isDirtyRef.current = false;
       setIsFormDirty(false);
       isFormDirtySyncRef.current = false;
-      setActiveTab(tab);
+      setActiveTab(tab); // 1. 먼저 탭 전환
+
+      // 2. 다음 페인트 사이클에 데이터 복원 (exit 애니메이션과 setProjectData 충돌 방지)
+      requestAnimationFrame(() => {
+        discardProjectChanges();
+      });
     }
-  }, [activeTab, isGloballyEditing, isFormDirty, showConfirm]);
+  }, [activeTab, isGloballyEditing, isFormDirty, showConfirm, discardProjectChanges]);
 
 
 
@@ -803,16 +889,17 @@ function App() {
 
     if (isInternalDirty || (isGloballyEditing && isDirtyRef.current) || isFormDirtySyncRef.current) {
       canProceed = await showConfirm({
-        title: "입력 내용 초기화",
-        message: "작성 중인 내용이 모두 사라집니다. 초기화할까요?",
-        confirmText: "초기화",
-        cancelText: "취소",
+        title: "변경 사항을 취소하시겠습니까?",
+        message: "마지막으로 저장된 데이터로 안전하게 복구됩니다.",
+        confirmText: "원래 상태로 복구",
+        cancelText: "계속 수정하기",
         type: "warning"
       });
     }
 
     if (canProceed) {
-      // [추가] 초기화 승인 시 탭 내부 폼 데이터 명시적 리셋
+      // [27b/Gemma4] 초기화 승인 시 전역 상태 롤백 및 컴포넌트 리마운트
+      discardProjectChanges();
       tabRef.current?.resetForm?.();
       executeExit();
     }
@@ -896,7 +983,7 @@ function App() {
               }
             };
 
-            await projectService.updateProject(curActive.id, { project_data: updatedData }, currentUserId);
+            await projectService.updateProject(curActive.id, { project_data: updatedData }, currentUser);
 
             console.log('↩️ [Rollback] Database successfully reverted to original snapshot');
           }
@@ -977,7 +1064,7 @@ function App() {
           phases: newPhases,
           project_data: updatedProjectData,
           updated: new Date().toISOString()
-        }, currentUserId);
+        }, currentUser);
 
         setProjectsList(prev => prev.map(p =>
           p.id === activeProject.id
@@ -1026,11 +1113,23 @@ function App() {
         project_data: initialProjectData,
       };
       if (isDemoMode) {
-        setProjectsList(prev => prev.map(p => p.id === REFERENCE_PROJECT_ID ? { ...p, ...resetPayload } : p));
+        setProjectsList(prev => {
+          const exists = prev.find(p => p.id === REFERENCE_PROJECT_ID);
+          if (exists) {
+            return prev.map(p => p.id === REFERENCE_PROJECT_ID ? { ...p, ...resetPayload } : p);
+          }
+          return [resetPayload, ...prev];
+        });
       } else {
         const { error } = await projectService.upsertProject(resetPayload);
         if (error) throw error;
-        setProjectsList(prev => prev.map(p => p.id === REFERENCE_PROJECT_ID ? { ...p, ...resetPayload } : p));
+        setProjectsList(prev => {
+          const exists = prev.find(p => p.id === REFERENCE_PROJECT_ID);
+          if (exists) {
+            return prev.map(p => p.id === REFERENCE_PROJECT_ID ? { ...p, ...resetPayload } : p);
+          }
+          return [resetPayload, ...prev];
+        });
       }
       // 만약 현재 해당 프로젝트를 워크스페이스에서 보고 있다면 데이터도 갱신
       if (activeProject?.id === REFERENCE_PROJECT_ID) {
@@ -1055,10 +1154,10 @@ function App() {
   };
 
   const handleDebugRollback = async () => {
-    if (!activeProject || !activeProject.isLatest || activeProject.evt === 'EVT0') {
+    if (!activeProject || !activeProject.isLatest) {
       showConfirm({
         title: "롤백 불가",
-        message: "롤백할 수 없는 상태입니다 (EVT0 이거나 최신 차수가 아님).",
+        message: "롤백할 수 없는 상태입니다 (최신 차수가 아님).",
         type: "warning",
         showCancel: false
       });
@@ -1073,57 +1172,106 @@ function App() {
     });
 
     if (confirmed) {
-      const currentProj = projectsList.find(p => p.id === activeProject.id);
-      if (!currentProj || currentProj.phases.length <= 1) return;
+      try {
+        // 1. 현재 단계 및 전체 차수 목록 확보 (데이터 기반 정렬)
+        const currentPhase = activeProject.evt;
+        const allPhases = Object.keys(projectData.revisions).sort((a, b) => {
+          return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        
+        const currentIndex = allPhases.indexOf(currentPhase);
 
-      const currentPhase = activeProject.evt;
-      const previousPhase = currentProj.phases[currentProj.phases.length - 2];
-      const newPhases = currentProj.phases.slice(0, -1);
+        // [Guard 1] projectData.revisions에 현재 차수 키가 없는 경우 (indexOf = -1)
+        if (currentIndex === -1) {
+          console.error('[Rollback] currentPhase not found in allPhases:', currentPhase, allPhases);
+          showConfirm({
+            title: "롤백 오류",
+            message: `현재 차수(${currentPhase})를 차수 목록에서 찾을 수 없습니다. 새로고침 후 다시 시도해주세요.`,
+            type: "danger",
+            showCancel: false
+          });
+          return;
+        }
 
-      // 1. 새로운 project_data 계산 (현재 차수 삭제 및 이전 차수를 draft로)
-      const newRevisions = { ...projectData.revisions };
-      delete newRevisions[currentPhase];
-      if (newRevisions[previousPhase]) {
-        newRevisions[previousPhase].status = 'draft';
-      }
-      const updatedProjectData = { ...projectData, revisions: newRevisions };
+        // [Guard 2] 이전 단계가 없는 경우 (EVT0 = index 0) 롤백 불가
+        if (currentIndex === 0) {
+          showConfirm({
+            title: "롤백 불가",
+            message: `현재 차수(${currentPhase})가 이 프로젝트의 최초 차수이므로 더 이상 롤백할 수 없습니다.\n롤백은 이전 차수 데이터가 존재할 때만 가능합니다.`,
+            type: "warning",
+            showCancel: false
+          });
+          return;
+        }
 
-      // 2. DB 업데이트 (데모 모드가 아닐 때만)
-      if (!isDemoMode) {
-        try {
+        const previousPhase = allPhases[currentIndex - 1];
+        const newPhases = allPhases.slice(0, currentIndex);
+
+        // 2. 새로운 project_data 계산 (불변성 보장을 위한 Deep Copy)
+        const updatedProjectData = structuredClone(projectData);
+        delete updatedProjectData.revisions[currentPhase];
+        if (updatedProjectData.revisions[previousPhase]) {
+          updatedProjectData.revisions[previousPhase].status = 'draft';
+        }
+
+        // 3. DB 업데이트 (실제 환경일 때만)
+        if (!isDemoMode) {
           await projectService.updateProject(activeProject.id, {
             phases: newPhases,
             latest_evt: previousPhase,
             project_data: updatedProjectData,
             updated: new Date().toISOString()
-          }, currentUserId);
-        } catch (dbErr) {
-          console.error("Rollback DB Error:", dbErr);
-          showConfirm({ title: "DB 업데이트 실패", message: "DB 저장 중 오류가 발생했습니다.", type: "danger", showCancel: false });
-          return;
+          }, currentUser);
         }
+
+        // 4. 로컬 상태 원자적 업데이트
+        setProjectsList(prev => prev.map(p => {
+          if (p.id === activeProject.id) {
+            return {
+              ...p,
+              phases: newPhases,
+              latest_evt: previousPhase,
+              updated: new Date().toISOString(),
+              project_data: updatedProjectData 
+            };
+          }
+          return p;
+        }));
+
+        setProjectData(updatedProjectData);
+        setActiveProject(prev => ({ 
+          ...prev, 
+          evt: previousPhase, 
+          phases: newPhases, // 메타데이터 동기화 (CRITICAL)
+          isLatest: true 
+        }));
+        setCurrentViewedRevision(previousPhase);
+        
+        // 5. 클린업 및 리프레시 (UI 강제 리마운트 트리거)
+        setRollbackCounter(prev => prev + 1);
+        isDirtyRef.current = false;
+        setIsFormDirty(false);
+
+        ['Project_Overview', 'IP_Index', 'Revision_Log', 'FA_Report'].forEach(tab => {
+          localStorage.removeItem(`mitus_autosave_${activeProject.id}_${tab}`);
+        });
+
+        showConfirm({ 
+          title: "롤백 완료", 
+          message: `[DEBUG] ${currentPhase}가 삭제되었습니다. 이제 프로젝트가 ${previousPhase} 단계의 'Draft' 상태로 안전하게 복구되었습니다.`, 
+          type: "success", 
+          showCancel: false 
+        });
+
+      } catch (err) {
+        console.error("Rollback Critical Error:", err);
+        showConfirm({
+          title: "롤백 실패",
+          message: "롤백 처리 중 오류가 발생했습니다: " + err.message,
+          type: "danger",
+          showCancel: false
+        });
       }
-
-      // 3. 로컬 상태 업데이트
-      setProjectsList(prev => prev.map(p => {
-        if (p.id === activeProject.id) {
-          return {
-            ...p,
-            phases: newPhases,
-            latest_evt: previousPhase,
-            updated: new Date().toISOString(),
-            project_data: updatedProjectData // 대시보드 리스트 데이터도 갱신
-          };
-        }
-        return p;
-      }));
-
-      setProjectData(updatedProjectData);
-      setActiveProject({ ...activeProject, evt: previousPhase, isLatest: true });
-      setCurrentViewedRevision(previousPhase);
-
-      isDirtyRef.current = false;
-      showConfirm({ title: "롤백 완료", message: `[DEBUG] ${currentPhase}가 삭제되고 ${previousPhase}로 롤백되었습니다.`, type: "success", showCancel: false });
     }
   };
 
@@ -1205,7 +1353,7 @@ function App() {
 
     setProjectData(updatedProjectData);
     if (!isDemoMode) {
-      await projectService.updateProject(activeProject.id, { project_data: updatedProjectData }, currentUserId);
+      await projectService.updateProject(activeProject.id, { project_data: updatedProjectData }, currentUser);
     }
 
     // 마감 성공 알림 및 다음 차수 생성 유도
@@ -1244,7 +1392,7 @@ function App() {
 
       setProjectData(updatedProjectData);
       if (!isDemoMode) {
-        await projectService.updateProject(activeProject.id, { project_data: updatedProjectData }, currentUserId);
+        await projectService.updateProject(activeProject.id, { project_data: updatedProjectData }, currentUser);
       }
       showConfirm({ title: "해제 완료", message: "잠금이 해제되어 다시 편집할 수 있습니다.", type: "success", showCancel: false });
     }
@@ -1402,7 +1550,7 @@ function App() {
             phases: updatedPhases,
             project_data: { ...existing.project_data, revisions: mergedRevisions },
             updated: new Date().toISOString()
-          }, currentUserId);
+          }, currentUser);
 
           // 5. [27b 권고] DB 실패 시 롤백 (잠금 권한 없음 포함)
           if (error) {
@@ -1587,6 +1735,7 @@ function App() {
               lockDetail={lockDetail}
               tabs={tabs}
               activeTab={activeTab}
+              rollbackCounter={rollbackCounter}
               currentViewedRevision={currentViewedRevision}
               lockReason={lockReason}
               globalIpDictionary={globalIpDictionary}
@@ -1603,6 +1752,7 @@ function App() {
               handleDebugRollback={handleDebugRollback}
               handleTabClick={handleTabClick}
               handleTabSubmit={handleTabSubmit}
+              handleLocalUpdate={handleLocalUpdate}
               handleEditingStateChange={handleEditingStateChange}
               handleForceUnlock={(pid) => handleForceUnlock(pid, () => {
                 // 내부 탈취 성공 시 본인 세션을 즉시 편집 모드로 승격하여 useProjectLock 활성화

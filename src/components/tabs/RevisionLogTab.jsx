@@ -6,27 +6,77 @@ import ActionBar from '../ActionBar';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 import { useConfirm } from '../../contexts/ConfirmContext';
-import { getIssueStatus, makeDefaultForm, calcNextNum, getHistory, DISPOSITION_OPTIONS, SEVERITY_OPTIONS } from '../../logic/revisionLogLogic';
+import { getIssueStatus, makeDefaultForm, calcNextNum, getHistory, DISPOSITION_OPTIONS } from '../../logic/revisionLogLogic';
 
-
+// ── New Architecture Hooks ──
+import { useLogFilter } from '../../hooks/revisionLog/useLogFilter';
+import { useLogData } from '../../hooks/revisionLog/useLogData';
+import { useLogForm } from '../../hooks/revisionLog/useLogForm';
+import { useAsyncAction } from '../../hooks/revisionLog/useAsyncAction';
 
 const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onFormDirtyChange, onForceUnlock }, ref) => {
-  // Safe defaults
-  const safeData = data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' };
-  const issues = safeData.issues || [];
-  const historyBlocks = safeData.historyBlocks || [];
+  // 1. Logic & Utils
+  const safeData = useMemo(() => data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' }, [data]);
   const project = overviewData?.Project_Name || 'Proj';
   const stage = currentRevision || 'EVT0';
-
   const showConfirm = useConfirm();
-
-
-  const [mode, setMode] = useState(safeData.initialMode || 'new');
-  const [editingId, setEditingId] = useState(null);
-  
+  const validIps = useMemo(() => new Set(overviewData?.IP_Blocks || []), [overviewData?.IP_Blocks]);
   const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
 
-  const validIps = useMemo(() => new Set(overviewData?.IP_Blocks || []), [overviewData?.IP_Blocks]);
+  // 2. Custom Hooks (The Granular Architecture)
+  const { 
+    ipDropdown, setIpDropdown, statusFilter, setStatusFilter, mode, setMode, 
+    handleIpChange: baseIpChange, handleStatusChange, handleModeChange 
+  } = useLogFilter(safeData.initialMode || 'new');
+
+  const { 
+    latestIssueStates, stats, sortedIssues, issues, historyBlocks 
+  } = useLogData(safeData, ipDropdown, validIps, project);
+
+  const { 
+    formData, editingId, isDirty, isDirtyRef, formResetKey, selectedFaForPull,
+    setFormData, setEditingId, setIsDirty, setSelectedFaForPull, handleFormChange, resetForm: baseResetForm
+  } = useLogForm(ipDropdown, onFormDirtyChange);
+
+  // ── [보안/성능] 27B 감리 반영: 원본 데이터는 useRef로 관리하여 리렌더링 차단 ──
+  const initialFormDataRef = useRef(null);
+
+  // ── [보안] 탭 언마운트 시 민감 데이터 클린업 ──
+  useEffect(() => {
+    return () => {
+      initialFormDataRef.current = null;
+    };
+  }, []);
+
+  const { executeSafe } = useAsyncAction();
+
+  // 3. UI/Interaction State
+  const [expandedSections, setExpandedSections] = useState({
+    actionRequired: true,
+    newFindings: true,
+    stillOpen: true,
+    resolved: false
+  });
+  const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
+
+  const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historyTargetId, setHistoryTargetId] = useState('');
+  const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
+
+  const [isTabEditing, setIsTabEditing] = useState(false);
+  const isReadOnly = isArchived || !isTabEditing;
+
+  // ── 탭 잠금 동기화 ──
+  useEffect(() => {
+    if (isArchived === true) setIsTabEditing(false);
+  }, [isArchived]);
+
+  useEffect(() => {
+    if (onEditingStateChange) onEditingStateChange(isTabEditing);
+  }, [isTabEditing, onEditingStateChange]);
+
+  // ── 가용한 IP 목록 계산 ──
   const availableIps = useMemo(() => {
     const s = new Set(validIps);
     let hasOrphans = false;
@@ -37,58 +87,15 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     return arr;
   }, [validIps, issues, historyBlocks]);
 
-  const [ipDropdown, setIpDropdown] = useState(availableIps[0] || 'Buck');
-  const currentSelectedIp = ipDropdown;
-  const [statusFilter, setStatusFilter] = useState('ALL');
-
-  const [expandedSections, setExpandedSections] = useState({
-    actionRequired: true,
-    newFindings: true,
-    stillOpen: true,
-    resolved: false
-  });
-  const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
-
-
-  const [formData, setFormData] = useState(makeDefaultForm(currentSelectedIp));
-  // expandedHistoryItems → IssueCard 내부 상태로 이전됨
-  const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
-  const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [historyTargetId, setHistoryTargetId] = useState('');
-  const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
-  const [selectedFaForPull, setSelectedFaForPull] = useState(null);
-  // [추가] 폼 강제 리셋을 위한 고유 키 상태 (사용자 요청 리셋 실패 해결)
-  const [formResetKey, setFormResetKey] = useState(0);
-
-  // ── 탭 로컬 편집 상태: 초기 잠금 상태로 시작 (사용자 요청) ──
-  const [isTabEditing, setIsTabEditing] = useState(false);
-  // isReadOnly: 전역 잠금(isArchived) 또는 로컬 잠금(!isTabEditing) 중 하나라도 true면 읽기 전용
-  const isReadOnly = isArchived || !isTabEditing;
-
-  useEffect(() => {
-    // 프로젝트 전체 잠금 상태가 바뀌면 탭 로컬 편집 상태도 동기화
-    // [수정] 자동 잠금 해제 로직 제거, 강제 잠금 로직만 유지
-    if (isArchived === true) {
-      setIsTabEditing(false);
-    }
-  }, [isArchived]);
-
-  useEffect(() => {
-    if (onEditingStateChange) onEditingStateChange(isTabEditing);
-  }, [isTabEditing, onEditingStateChange]);
-
-  // FA Pull 시 useEffect의 폼 초기화를 막기 위한 ref
-  const pendingFaPullDataRef = useRef(null);
-
-  // 현재 IP에서 미연동 FA 목록
+  // ── 미연동 FA 목록 ──
   const unlinkedFasForCurrentIp = useMemo(() => {
     const reports = faReportData?.faReports || [];
-    return reports.filter(f => f.ipBlock === currentSelectedIp && !f.isLinkedToLog);
-  }, [faReportData, currentSelectedIp]);
+    return reports.filter(f => f.ipBlock === ipDropdown && !f.isLinkedToLog);
+  }, [faReportData, ipDropdown]);
 
   const hasUnlinkedFa = unlinkedFasForCurrentIp.length > 0;
 
-  // ─── 지능형 Auto-Save ───
+  // ── Auto-Save ──
   const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
     projectId,
     tabName: 'Revision_Log',
@@ -101,142 +108,17 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     setIsEditing: setIsTabEditing
   });
 
-  const isFirstMount = useRef(true);
-
-
-
-  // ── 폼 수정 상태(Dirty) 감지 로직 ──
-  const [isDirty, setIsDirty] = useState(false);
-
-  // Dirty 판별 순수 함수
-  const checkIfDirty = (data, eid) => {
-    return !!(
-      eid ||
-      (data.phenomenon || '').trim() || 
-      (data.rootCause || '').trim() || 
-      (data.comment || '').trim() || 
-      (data.reopenReason || '').trim() ||
-      (data.targetIssue || '') ||
-      data.faId ||
-      (data.types && data.types.length > 1) ||
-      data.subBlock
-    );
-  };
-
-  const latestIssueStates = useMemo(() => {
-    const s = {};
-    const chron = [...historyBlocks].flatMap(b => b.issues).concat(issues);
-    chron.forEach(item => {
-      const id = item?.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item?.targetIssue;
-      if (id) s[id] = item;
-    });
-    return s;
-  }, [historyBlocks, issues, project]);
-
-  const handleFormChange = useCallback((newData) => {
-    setFormData(newData);
-    const newDirty = checkIfDirty(newData, editingId);
-    setIsDirty(newDirty);
-    if (onFormDirtyChange) onFormDirtyChange(newDirty);
-  }, [editingId, onFormDirtyChange]);
-
-  // ✅ isDirty 상태를 ref로 복사하여 useImperativeHandle에서 항상 최신 값을 참조하도록 함 (Stale Closure 방지)
-  const isDirtyRef = useRef(isDirty);
-  useEffect(() => {
-    isDirtyRef.current = isTabEditing ? isDirty : false;
-  }, [isDirty, isTabEditing]);
-
-  // ── [신규] 명령형 내비게이션 상태 및 리셋 로직 노출 ──
+  // ── 명령형 API 노출 ──
   useImperativeHandle(ref, () => ({
-    // ✅ 수정: 이제 직접 모달을 띄우지 않고, 수정 여부 상태만 App.jsx에 보고함
-    canNavigate: () => {
-      // 수정된 내용이 있으면 false 반환 -> App.jsx에서 통합 모달을 띄움
-      return !isDirtyRef.current;
-    },
-    // 외부(App.jsx)에서 명시적으로 폼을 비울 수 있는 기능
-    resetForm: () => {
-      setEditingId(null);
-      setSelectedFaForPull(null);
-      setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
-      setIsDirty(false);
-      if (onFormDirtyChange) onFormDirtyChange(false);
-      setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
-    }
-  }), [currentSelectedIp, latestIssueStates, onFormDirtyChange]);
+    canNavigate: () => !isDirtyRef.current,
+    resetForm: () => baseResetForm(calcNextNum(ipDropdown, latestIssueStates))
+  }), [ipDropdown, latestIssueStates, baseResetForm]);
 
-
-
-  useEffect(() => {
-    // IP 탭 선택 변경 시: 편집 중이 아니고 new 모드일 때만 ipBlock 및 issueNum 업데이트
-    if (!editingId && mode === 'new') {
-      setFormData(prev => {
-        const nextNum = calcNextNum(currentSelectedIp, latestIssueStates);
-        // 이미 해당 IP의 번호가 채워져 있다면 유지, 아니면 새 번호 채번
-        const shouldUpdate = prev.ipBlock !== currentSelectedIp || !prev.issueNum;
-        return { 
-          ...prev, 
-          ipBlock: currentSelectedIp,
-          issueNum: shouldUpdate ? nextNum : prev.issueNum
-        };
-      });
-    }
-  }, [currentSelectedIp, editingId, mode, calcNextNum]);
-
-  const stats = useMemo(() => {
-    let total = 0, open = 0, closed = 0, deferred = 0;
-    Object.values(latestIssueStates || {}).forEach(item => {
-      const ip = item?.entryMode === 'new' ? item?.ipBlock : (item?.targetIssue ? item.targetIssue.split('.')[0] : '');
-      const mappedIp = validIps.has(ip) ? ip : 'Deleted IP (Orphan)';
-      if (ipDropdown === 'All' || mappedIp === ipDropdown) {
-        total++;
-        const status = getIssueStatus(item);
-        if (status === 'DEFERRED') deferred++;
-        else if (status === 'OPEN') open++;
-        else if (status === 'CLOSED') closed++;
-      }
-    });
-    return { total, open, closed, deferred };
-  }, [latestIssueStates, ipDropdown, validIps]);
-
-  const closedIssues = useMemo(() => {
-    const fixedThisStage = new Set(
-      issues.filter(i => i.entryMode === 'eval' && i.assessment === 'Fixed').map(i => i.targetIssue)
-    );
-    const closed = [];
-    Object.entries(latestIssueStates).forEach(([id, st]) => {
-      if (getIssueStatus(st) === 'CLOSED' && !fixedThisStage.has(id)) closed.push(id);
-    });
-    return closed.sort();
-  }, [latestIssueStates, issues]);
-
-  const sortedRevIds = useMemo(() => {
-    return Object.keys(latestIssueStates).sort();
-  }, [latestIssueStates]);
-
+  // ── 파생 상태 (Derived States) ──
   const availOrigins = useMemo(() => {
     const idx = STAGES.indexOf(stage);
     return idx > 0 ? STAGES.slice(0, idx) : [];
-  }, [stage]);
-
-  const sortedIssues = useMemo(() => {
-    return [...issues].sort((a, b) => {
-      const isNewLike = (m) => m === 'new' || m === 'fa';
-      const idA = isNewLike(a?.entryMode) ? `${a?.ipBlock}.${project}.${a?.issueNum}` : a?.targetIssue;
-      const idB = isNewLike(b?.entryMode) ? `${b?.ipBlock}.${project}.${b?.issueNum}` : b?.targetIssue;
-      const ipA = isNewLike(a?.entryMode) ? a?.ipBlock : (a?.targetIssue ? a.targetIssue.split('.')[0] : '');
-      const ipB = isNewLike(b?.entryMode) ? b?.ipBlock : (b?.targetIssue ? b.targetIssue.split('.')[0] : '');
-
-      const mappedIpA = validIps.has(ipA) ? ipA : 'Deleted IP (Orphan)';
-      const mappedIpB = validIps.has(ipB) ? ipB : 'Deleted IP (Orphan)';
-
-      if (ipDropdown === 'All') {
-        if (mappedIpA !== mappedIpB) return mappedIpA.localeCompare(mappedIpB);
-      }
-
-      if (a.entryMode !== b.entryMode) return a.entryMode === 'eval' ? -1 : (a.entryMode === 'new' ? 0 : 1);
-      return idA.localeCompare(idB);
-    });
-  }, [issues, project, ipDropdown, validIps]);
+  }, [stage, STAGES]);
 
   const sortedLoadedIssues = useMemo(() => [...(safeData.loadedIssues || [])].sort(), [safeData.loadedIssues]);
   const sortedAllIds = useMemo(() => Object.keys(latestIssueStates).sort(), [latestIssueStates]);
@@ -263,11 +145,22 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     return candidates;
   }, [historyBlocks, safeData.loadedIssues, issues, project]);
 
-
-
   const curStageNums = useMemo(() => {
     return issues.filter(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock).map(i => i.issueNum).sort((a,b)=>a.localeCompare(b));
   }, [issues, formData.ipBlock]);
+
+  // ── IP 변경 시 폼 동기화 (Effect) ──
+  useEffect(() => {
+    if (!editingId && mode === 'new') {
+      const nextNum = calcNextNum(ipDropdown, latestIssueStates);
+      setFormData(prev => ({ 
+        ...prev, 
+        ipBlock: ipDropdown,
+        issueNum: (prev.ipBlock !== ipDropdown || !prev.issueNum) ? nextNum : prev.issueNum
+      }));
+    }
+  }, [ipDropdown, editingId, mode, latestIssueStates]);
+
   const handleUpdate = useCallback((newIssues) => {
     const updatedData = { ...safeData, issues: newIssues };
     if (onImmediateUpdate) onImmediateUpdate(updatedData);
@@ -306,15 +199,13 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       subBlock: fa.subBlock || null,
     };
 
-    // 경쟁 조건 방지: ref 방식 제거, 직접 상태 업데이트
-    // IP 드롭다운을 FA의 IP로 먼저 동기화
     if (fa.ipBlock && fa.ipBlock !== ipDropdown) {
       setIpDropdown(fa.ipBlock);
     }
     setEditingId(null);
     setSelectedFaForPull(fa);
-    setFormData(fillData);  // ← 직접 주입 (useEffect 경쟁 없음)
-    setMode('fa');          // ← mode 마지막에 변경 (IP useEffect는 mode!=='new'라 무시)
+    setFormData(fillData);
+    setMode('fa');
     setPullFaModalOpen(false);
   };
 
@@ -331,11 +222,8 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     if (!formData.faId) return;
 
     if (editingId) {
-      // [Step 5-2] 이미 리스트에 등록된 이슈인 경우, 카드에서의 삭제(해제)와 동일하게 처리하여 정합성 유지
-      // formData에 id가 유실되었을 가능성을 대비해 editingId를 명시적으로 주입
       await handleDeleteRequest({ ...formData, id: editingId });
     } else {
-      // 아직 저장되지 않은 신규 Pull 상태인 경우 폼만 초기화
       markFaLinkState(formData.faId, false);
       setFormData(p => ({
         ...p,
@@ -348,49 +236,53 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   };
 
   const handleSave = useCallback(async (dataToSave) => {
-    // IssueForm에서 전달된 최신 데이터를 사용하거나, fallback으로 현재 formData 사용
-    const finalData = dataToSave || formData;
-    
-    if (isArchived && editingId) {
+    // [보안 가드] executeSafe를 통한 AbortSignal 관리 및 레이스 컨디션 차단
+    await executeSafe(async (signal) => {
+      const finalData = dataToSave || formData;
+      
+      if (isArchived && editingId) {
+        setEditingId(null);
+        setFormData(makeDefaultForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates)));
+        return;
+      }
+
+      const currentIp = finalData.ipBlock || ipDropdown;
+      
+      let entry = {
+        ...finalData,
+        entryMode: (mode === 'fa') ? 'new' : finalData.entryMode || mode,
+        ipBlock: currentIp,
+        stage: stage
+      };
+
+      if (entry.entryMode === 'carryover') {
+        entry.carryoverStatus = 'RESOLVED';
+      }
+
+      let newIssues = [...issues];
+      const effectiveEditingId = editingId || finalData.id;
+      
+      if (effectiveEditingId && issues.some(it => it.id === effectiveEditingId)) {
+        newIssues = newIssues.map(it => it.id === effectiveEditingId ? { ...it, ...entry, id: effectiveEditingId } : it);
+      } else {
+        entry.id = Date.now();
+        newIssues = [entry, ...issues];
+      }
+
+      // [보안] DB 저장 시 AbortSignal 전파
+      if (onSubmit) await onSubmit({ ...safeData, issues: newIssues }, signal);
+
+      if (finalData.faId) {
+        markFaLinkState(finalData.faId, true);
+      }
+
       setEditingId(null);
-      setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
-      return;
-    }
-
-    const currentIp = finalData.ipBlock || currentSelectedIp;
-    
-    let entry = {
-      ...finalData,
-      entryMode: (mode === 'fa') ? 'new' : finalData.entryMode || mode,
-      ipBlock: currentIp,
-      stage: stage
-    };
-
-    if (entry.entryMode === 'carryover') {
-       entry.carryoverStatus = 'RESOLVED';
-    }
-
-    let newIssues = [...issues];
-    const effectiveEditingId = editingId || finalData.id;
-    
-    if (effectiveEditingId && issues.some(it => it.id === effectiveEditingId)) {
-      // 기존 이슈 수정
-      newIssues = newIssues.map(it => it.id === effectiveEditingId ? { ...it, ...entry, id: effectiveEditingId } : it);
-    } else {
-      // 신규 이슈 추가
-      entry.id = Date.now();
-      newIssues = [entry, ...issues];
-    }
-
-    if (onSubmit) onSubmit({ ...safeData, issues: newIssues });
-
-    if (finalData.faId) {
-      markFaLinkState(finalData.faId, true);
-    }
-
-    setEditingId(null);
-    setFormData(makeDefaultForm(currentIp, calcNextNum(currentIp, latestIssueStates)));
-  }, [isArchived, editingId, currentSelectedIp, latestIssueStates, mode, stage, issues, handleUpdate, onSubmit, safeData, markFaLinkState, formData]);
+      initialFormDataRef.current = null;
+      setFormData(makeDefaultForm(currentIp, calcNextNum(currentIp, latestIssueStates)));
+      setIsDirty(false);
+      if (onFormDirtyChange) onFormDirtyChange(false);
+    });
+  }, [isArchived, editingId, ipDropdown, latestIssueStates, mode, stage, issues, onSubmit, safeData, markFaLinkState, formData, executeSafe, onFormDirtyChange, setIsDirty, setEditingId, setFormData]);
 
   const cancelEdit = useCallback(async (skipConfirm = false) => {
     if (!skipConfirm && isDirtyRef.current) {
@@ -401,14 +293,9 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       });
       if (!confirmed) return;
     }
-    // 폼 초기화 및 모든 Dirty 플래그 리셋
-    setEditingId(null);
-    setSelectedFaForPull(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
-    setIsDirty(false);
-    if (onFormDirtyChange) onFormDirtyChange(false);
-    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
-  }, [showConfirm, currentSelectedIp, latestIssueStates, onFormDirtyChange]);
+    initialFormDataRef.current = null;
+    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+  }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm]);
 
   const availableDispositions = stage === 'EVT0' && mode === 'new'
     ? DISPOSITION_OPTIONS.filter(opt => opt !== 'Revision')
@@ -417,14 +304,16 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const handleEdit = useCallback((item) => {
     setMode(item.faId ? 'fa' : item.entryMode);
     setEditingId(item.id);
+    initialFormDataRef.current = { ...item };
     setFormData({ ...item });
-  }, []);
+  }, [setMode, setEditingId, setFormData]);
 
   const handleView = useCallback((item) => {
     setMode(item.faId ? 'fa' : item.entryMode);
     setEditingId(item.id);
+    initialFormDataRef.current = { ...item };
     setFormData({ ...item });
-  }, []);
+  }, [setMode, setEditingId, setFormData]);
 
   const handleHistoryCardClick = useCallback((item) => {
     const issueId = item.entryMode === 'new'
@@ -433,46 +322,44 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     const finalStatus = getIssueStatus(item);
     const isEvalTarget = (safeData.loadedIssues || []).includes(issueId);
 
+    const commonFormData = {
+      ...makeDefaultForm(item.ipBlock || ipDropdown, calcNextNum(item.ipBlock || ipDropdown, latestIssueStates)),
+      targetIssue: issueId,
+      ipBlock: item.ipBlock || ipDropdown,
+      severity: item.severity || 'Major',
+      subBlock: item.subBlock || null,
+    };
+
+    setEditingId(null);
+    initialFormDataRef.current = null;
+
     if (finalStatus === 'CLOSED') {
       setMode('reopen');
-      setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
+        ...commonFormData,
         entryMode: 'reopen',
-        targetIssue: issueId,
-        severity: item.severity || 'Major',
         phenomenon: item.phenomenon || '',
         rootCause: item.rootCause || '',
         disposition: 'Revision',
-        subBlock: item.subBlock || null,
       });
     } else if (isEvalTarget) {
       setMode('eval');
-      setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
+        ...commonFormData,
         entryMode: 'eval',
-        targetIssue: issueId,
-        ipBlock: item.ipBlock || currentSelectedIp,
-        severity: item.severity,
-        subBlock: item.subBlock || null,
       });
     } else {
       setMode('carryover');
-      setEditingId(null);
       setFormData({
-        ...makeDefaultForm(item.ipBlock || currentSelectedIp, calcNextNum(item.ipBlock || currentSelectedIp, latestIssueStates)),
+        ...commonFormData,
         entryMode: 'carryover',
-        targetIssue: issueId,
-        subBlock: item.subBlock || null,
       });
     }
-  }, [project, safeData.loadedIssues, currentSelectedIp, stage, latestIssueStates]);
+  }, [project, safeData.loadedIssues, ipDropdown, latestIssueStates, setEditingId, setMode, setFormData]);
 
   const handleTabSwitch = useCallback(async (newMode) => {
     if (mode === newMode) return;
     
-    // [보안 가드] ref를 통해 최신 dirty 상태 확인 (편집 모드일 때만 체크)
     if (isTabEditing && isDirtyRef.current && !editingId) {
       const confirmed = await showConfirm({
         title: "작성 취소",
@@ -482,18 +369,11 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     
-    // 명시적 탭 전환: 폼 초기화 및 상태 리셋 후 mode 변경
-    setEditingId(null);
-    setSelectedFaForPull(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
-    setIsDirty(false);
-    if (onFormDirtyChange) onFormDirtyChange(false);
-    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
-    
-    setIsTabEditing(false); // 탭 전환 시 편집 모드 명시적 해제 (Step 5-1)
+    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+    initialFormDataRef.current = null;
+    setIsTabEditing(false);
     setMode(newMode);
-    
-  }, [mode, editingId, showConfirm, currentSelectedIp, latestIssueStates, isTabEditing, onFormDirtyChange]);
+  }, [mode, editingId, showConfirm, ipDropdown, latestIssueStates, isTabEditing, baseResetForm, setMode]);
 
   const handleIpChange = useCallback(async (newIp) => {
     if (ipDropdown === newIp) return;
@@ -506,59 +386,58 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     setIpDropdown(newIp);
-    setFormData(makeDefaultForm(newIp, calcNextNum(newIp, latestIssueStates)));
-    setIsDirty(false);
-    if (onFormDirtyChange) onFormDirtyChange(false);
-    setFormResetKey(prev => prev + 1); // 폼 물리적 리셋 유도
-    if (editingId) setEditingId(null);
-  }, [ipDropdown, isDirty, editingId, showConfirm, latestIssueStates, isTabEditing, onFormDirtyChange]);
+    baseResetForm(calcNextNum(newIp, latestIssueStates));
+    initialFormDataRef.current = null;
+  }, [ipDropdown, editingId, showConfirm, latestIssueStates, isTabEditing, baseResetForm, setIpDropdown]);
 
   const handleDeleteRequest = useCallback(async (item) => {
-    const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
-    const targetId = (item.entryMode === 'new' || item.entryMode === 'fa')
-      ? `${item.ipBlock}.${project}.${item.issueNum}`
-      : item.targetIssue || item.id;
+    // [보안 가드] 삭제 작업도 executeSafe로 관리
+    await executeSafe(async (signal) => {
+      const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
+      const targetId = (item.entryMode === 'new' || item.entryMode === 'fa')
+        ? `${item.ipBlock}.${project}.${item.issueNum}`
+        : item.targetIssue || item.id;
 
-    const confirmed = await showConfirm({
-      title: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
-      message: item.faId ? "연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?" : (isSpecialMode ? "평가 및 대응 방안을 초기화하시겠습니까?" : "등록된 신규 이슈를 삭제하시겠습니까?"),
-      type: "danger",
-      confirmText: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 초기화" : "완전 삭제")
-    });
+      const confirmed = await showConfirm({
+        title: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
+        message: item.faId ? "연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?" : (isSpecialMode ? "평가 및 대응 방안을 초기화하시겠습니까?" : "등록된 신규 이슈를 삭제하시겠습니까?"),
+        type: "danger",
+        confirmText: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 초기화" : "완전 삭제")
+      });
 
-    if (confirmed) {
-      const newIssues = issues.filter(it => it.id !== item.id);
-      handleUpdate(newIssues);
-      if (onSubmit) onSubmit({ ...safeData, issues: newIssues });
-      if (item.faId) {
-        markFaLinkState(item.faId, false);
+      if (confirmed) {
+        const newIssues = issues.filter(it => it.id !== item.id);
+        
+        if (onSubmit) await onSubmit({ ...safeData, issues: newIssues }, signal);
+        
+        if (item.faId) {
+          markFaLinkState(item.faId, false);
+        }
+        
+        if (editingId === item.id) cancelEdit(true);
       }
-      // [Step 5-3] 이미 삭제 컨펌을 받았으므로, 폼을 닫을 때 추가 컨펌(작성 취소)을 생략함
-      if (editingId === item.id) cancelEdit(true);
-    }
-  }, [showConfirm, project, issues, handleUpdate, onSubmit, safeData, markFaLinkState, editingId, cancelEdit]);
+    });
+  }, [showConfirm, project, issues, onSubmit, safeData, markFaLinkState, editingId, cancelEdit, executeSafe]);
 
   const handleInput = (e) => {
     const { name, value } = e.target;
     const nextData = { ...formData, [name]: value };
-    handleFormChange(nextData);
+    handleFormChange(nextData, initialFormDataRef.current);
   };
 
   const handleTypeToggle = (t) => {
     const cur = formData.types || [];
     const nextTypes = cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t];
-    handleFormChange({ ...formData, types: nextTypes });
+    handleFormChange({ ...formData, types: nextTypes }, initialFormDataRef.current);
   };
 
   const confirmAssigneeChange = () => {
     if (assigneeModal.newAssignee) {
       const val = formData.assignee ? `${formData.assignee}, ${assigneeModal.newAssignee}` : assigneeModal.newAssignee;
-      handleFormChange({ ...formData, assignee: val });
+      handleFormChange({ ...formData, assignee: val }, initialFormDataRef.current);
     }
     setAssigneeModal({ open: false, newAssignee: '' });
   };
-
-
 
   const renderHistoricalContext = (id) => {
     const h = getHistory(id, historyBlocks, issues, project, stage);
@@ -588,14 +467,11 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     );
   };
 
-
-
   const handleLock = () => {
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
-    setEditingId(null);
-    setFormData(makeDefaultForm(currentSelectedIp, calcNextNum(currentSelectedIp, latestIssueStates)));
+    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
   };
 
   return (
@@ -693,7 +569,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
           isArchived={isArchived}
           stage={stage}
           project={project}
-          currentSelectedIp={currentSelectedIp}
+          currentSelectedIp={ipDropdown}
           latestIssueStates={latestIssueStates}
           historyBlocks={historyBlocks}
           issues={issues}
@@ -702,7 +578,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
           carryoverCandidateSet={carryoverCandidateSet}
           sortedLoadedIssues={sortedLoadedIssues}
           availOrigins={availOrigins}
-          sortedRevIds={sortedRevIds}
+          sortedRevIds={sortedAllIds}
           onSave={handleSave}
           onCancel={cancelEdit}
           onChange={handleFormChange}
@@ -1045,7 +921,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
               <h3 className="text-base font-bold flex items-center gap-2">
                 <Link size={17} className="text-yellow-600"/>
                 FA 리포트에서 데이터 가져오기
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{currentSelectedIp}</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{ipDropdown}</span>
               </h3>
               <button onClick={() => setPullFaModalOpen(false)} className="text-gray-500 hover:text-gray-800 p-1.5 rounded hover:bg-gray-200">
                 <X size={18}/>

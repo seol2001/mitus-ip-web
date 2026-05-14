@@ -19,6 +19,7 @@ const WorkspaceView = ({
   lockDetail,
   tabs,
   activeTab,
+  rollbackCounter,
   currentViewedRevision,
   lockReason,
   globalIpDictionary,
@@ -35,6 +36,7 @@ const WorkspaceView = ({
   handleDebugRollback,
   handleTabClick,
   handleTabSubmit,
+  handleLocalUpdate,
   handleEditingStateChange,
   handleForceUnlock,
   handleAddCustomIp,
@@ -76,6 +78,7 @@ const WorkspaceView = ({
       {/* 탭 콘텐츠 영역 */}
       <WorkspaceContent 
         activeTab={activeTab}
+        rollbackCounter={rollbackCounter}
         tabRef={tabRef}
         currentData={currentData}
         currentViewedRevision={currentViewedRevision}
@@ -85,6 +88,7 @@ const WorkspaceView = ({
         globalIpDictionary={globalIpDictionary}
         handleAddCustomIp={handleAddCustomIp}
         handleTabSubmit={handleTabSubmit}
+        handleLocalUpdate={handleLocalUpdate}
         handleEditingStateChange={handleEditingStateChange}
         handleForceUnlock={handleForceUnlock}
         handleFormDirtyChange={handleFormDirtyChange}
