@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { sanitizeError } from '../utils/securityUtils';
 
 /**
  * 프로젝트 관련 Supabase 통신 서비스
@@ -21,7 +22,7 @@ export const projectService = {
     return { 
       projects: data || [], 
       customIps: customIpsData || [], 
-      error: error || customIpsError 
+      error: sanitizeError(error || customIpsError)
     };
   },
 
@@ -29,14 +30,15 @@ export const projectService = {
    * 신규 프로젝트 생성
    */
   async createProject(projectMeta) {
-    return await supabase.from('projects').insert([projectMeta]);
+    const { data, error } = await supabase.from('projects').insert([projectMeta]);
+    return { data, error: sanitizeError(error) };
   },
 
   /**
    * 프로젝트 데이터 업데이트 (Tab Submit 등)
    */
-  async updateProjectData(projectId, projectData, updatedTime, userId) {
-    return await supabase
+  async updateProjectData(projectId, projectData, updatedTime, userId, signal = null) {
+    const { data, error, count } = await supabase
       .from('projects')
       .update({ 
         project_data: projectData, 
@@ -45,43 +47,49 @@ export const projectService = {
       })
       .eq('id', projectId)
       .eq('locked_by', userId)
-      .select('*', { count: 'exact' }); // 업데이트된 행의 개수를 확인하기 위해 select 추가
+      .select('*', { count: 'exact' })
+      .abortSignal(signal); // AbortSignal 연동
+
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
    * 프로젝트 메타데이터 및 데이터 전체 업데이트 (병합/가져오기 등)
    */
-  async updateProject(projectId, updatePayload, userId = null) {
+  async updateProject(projectId, updatePayload, userId = null, signal = null) {
     let query = supabase
       .from('projects')
       .update(updatePayload)
       .eq('id', projectId);
       
-    // 사용자 ID가 제공된 경우에만 잠금 상태 확인 (API Guard)
-    // 아무도 잠그지 않았거나(null), 본인이 잠근 경우에만 업데이트 허용
     if (userId) {
       query = query.or(`locked_by.is.null,locked_by.eq.${userId}`);
     }
     
-    return await query.select('*', { count: 'exact' });
+    const { data, error, count } = await query
+      .select('*', { count: 'exact' })
+      .abortSignal(signal);
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
    * 프로젝트 상세 데이터 단건 조회 (워크스페이스 진입 시)
    */
   async fetchProjectDetail(projectId) {
-    return await supabase
+    const { data, error } = await supabase
       .from('projects')
       .select('project_data, is_locked, locked_by, locked_at')
       .eq('id', projectId)
       .single();
+    return { data, error: sanitizeError(error) };
   },
 
   /**
    * 프로젝트 삭제
    */
   async deleteProject(projectId) {
-    return await supabase.from('projects').delete().eq('id', projectId);
+    const { error } = await supabase.from('projects').delete().eq('id', projectId);
+    return { error: sanitizeError(error) };
   },
 
   /**
@@ -90,7 +98,7 @@ export const projectService = {
    * @param {string} userId
    * @param {boolean} force - 활성 잠금이라도 강제로 탈취할지 여부 (Atomic Seizure)
    */
-  async acquireLock(projectId, userId, force = false, lockTime = null) {
+  async acquireLock(projectId, userId, force = false, lockTime = null, signal = null) {
     const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const newLockTime = lockTime || new Date().toISOString();
 
@@ -104,14 +112,14 @@ export const projectService = {
       .eq('id', projectId);
 
     if (force) {
-      // [Atomic Seizure] 강제 탈취 시에는 소유자 조건을 체크하지 않고 단일 쿼리로 덮어씀
-      // 이는 '해제 후 획득' 시 발생하는 TOCTOU 레이스 컨디션을 근본적으로 차단함
     } else {
-      // [일반 획득] 아무도 잠그지 않았거나, 내가 이미 잠갔거나, 잠금이 정체(Stale)된 경우에만 성공
       query = query.or(`locked_by.is.null,locked_by.eq.${userId},locked_at.lt.${staleThreshold}`);
     }
 
-    return await query.select('*', { count: 'exact' });
+    const { data, error, count } = await query
+      .select('*', { count: 'exact' })
+      .abortSignal(signal);
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
@@ -123,7 +131,7 @@ export const projectService = {
       console.warn('⚠️ [projectService] userId 없이 releaseLock이 호출되었습니다. 해제가 무시될 수 있습니다.');
     }
 
-    return await supabase
+    const { data, error, count } = await supabase
       .from('projects')
       .update({ 
         is_locked: false, 
@@ -131,8 +139,9 @@ export const projectService = {
         locked_at: null 
       })
       .eq('id', projectId)
-      .eq('locked_by', userId) // 반드시 소유자 본인이어야 함
+      .eq('locked_by', userId)
       .select('*', { count: 'exact' });
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
@@ -140,7 +149,7 @@ export const projectService = {
    * 타인의 좀비 잠금이나 정체된 잠금을 강제로 풀 때 사용
    */
   async forceReleaseLock(projectId) {
-    return await supabase
+    const { data, error, count } = await supabase
       .from('projects')
       .update({ 
         is_locked: false, 
@@ -148,8 +157,8 @@ export const projectService = {
         locked_at: null 
       })
       .eq('id', projectId)
-      // 강제 해제는 소유자 체크 없이 ID만으로 수행 (관리자 기능 또는 Takeover 시나리오)
       .select('*', { count: 'exact' });
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
@@ -172,46 +181,51 @@ export const projectService = {
    * 하트비트 (잠금 시간 갱신 - 원자적 처리)
    */
   async updateHeartbeat(projectId, userId) {
-    return await supabase
+    const { data, error, count } = await supabase
       .from('projects')
       .update({ locked_at: new Date().toISOString() })
       .eq('id', projectId)
-      .eq('locked_by', userId) // 내가 잠금을 소유하고 있을 때만 갱신 가능
+      .eq('locked_by', userId)
       .select('*', { count: 'exact' });
+    return { data, error: sanitizeError(error), count };
   },
 
   /**
    * Custom IP 추가
    */
   async addCustomIp(category, name, description, currentUser) {
-    return await supabase
+    const { data, error } = await supabase
       .from('custom_ips')
       .insert([{ category, name, description, created_by: currentUser }])
       .select();
+    return { data, error: sanitizeError(error) };
   },
 
   /**
    * Custom IP 수정
    */
   async updateCustomIp(id, updatedData) {
-    return await supabase
+    const { data, error } = await supabase
       .from('custom_ips')
       .update(updatedData)
       .eq('id', id)
       .select();
+    return { data, error: sanitizeError(error) };
   },
 
   /**
    * Custom IP 삭제
    */
   async deleteCustomIp(id) {
-    return await supabase.from('custom_ips').delete().eq('id', id);
+    const { error } = await supabase.from('custom_ips').delete().eq('id', id);
+    return { error: sanitizeError(error) };
   },
 
   /**
    * 프로젝트 복제 및 복원 시 Upsert
    */
   async upsertProject(projectPayload) {
-    return await supabase.from('projects').upsert(projectPayload);
+    const { data, error } = await supabase.from('projects').upsert(projectPayload);
+    return { data, error: sanitizeError(error) };
   }
 };

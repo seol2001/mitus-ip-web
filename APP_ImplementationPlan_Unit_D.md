@@ -5,42 +5,87 @@
 
 ---
 
-## 🛠 1단계: 서버 사이드 보안 및 데이터 정합성 강화
-- **작업 내용**: 
-  - Supabase **RLS(Row Level Security)** 정책 적용으로 프로젝트 잠금 권한 강제.
-  - **비동기 무결성 가드**: `AbortController`를 통한 중복/지연 요청 취소 처리.
-- **상세 설계**: [Design Document](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/docs/02-design/features/unit-d-stability-security.design.md)
-- **핵심 패턴**: Optimistic UI + Rollback mechanism.
+## 🏗️ 개발 원칙 및 시스템 가이드라인 (Unit D 기반)
 
-## 🛠 2단계: 로직 현대화 및 파편화 (Logic Modernization)
-- **작업 내용**: 
-  - `useReducer` 도입을 통한 `RevisionLogTab` 상태 중앙 집중 관리.
-  - 비즈니스 로직의 커스텀 훅(`useLogActions`, `useLogState`) 분리.
-- **상세 설계**: 1,140줄의 컴포넌트 파일을 기능 단위로 분리하여 가독성 및 테스트 용이성 확보.
+> [!IMPORTANT]
+> 본 프로젝트의 모든 수정 작업은 아래의 핵심 원칙을 엄격히 준수합니다.
 
-## 🛠 3단계: 전역 에러 핸들링 및 사용자 액션 로깅
-- **작업 내용**: 
-  - `ActionLoggerContext` 도입: 주요 데이터 변경 이력을 메모리에 기록.
-  - `ErrorBoundary` 고도화: 에러 발생 시 로그를 기반으로 한 '이전 상태 복구' 링크 제공.
-- **핵심 패턴**: Command 패턴 기반의 액션 로깅.
-
----
-
-## 🏁 체크리스트 및 현재 진행 상황
-- [x] 단계 0: 기획 및 상세 설계 완료 (`bkit_pdca_design`)
-- [ ] 단계 1: 서버 사이드 RLS 정책 및 비동기 가드 적용 예정
-- [ ] 단계 2: 상태 관리 로직 현대화 (`useReducer`) 예정
-- [ ] 단계 3: 로깅 및 에러 핸들링 시스템 구축 예정
+1. **디자인 유지 (UI/UX Preservation)**: UI 디자인, CSS 클래스명, 레이아웃 구조는 절대 수정하지 않습니다. 모든 작업은 '보이지 않는 로직'의 고도화에 집중합니다.
+2. **멀티 모델 협업 분석 (gemma4 & 27b)**: 복잡한 논리 판단 및 데이터 스키마 설계 시, **gemma4 모델의 1차 분석**과 **27b 모델의 크로스 체크 절차**를 거쳐 분석의 정밀도와 신뢰성을 확보합니다.
+3. **D2C (Direct-to-Code) 프롬프팅**: 추론 시 구조화된 프롬프트를 사용하여 토큰 유실을 방지하고 코드 정합성을 극대화합니다.
+4. **bkit 기반 PDCA 협업**:
+   - **Plan/Design**: bkit을 통한 상세 설계 및 아키텍처 체크.
+   - **Do**: 설계에 기반한 정밀한 코드 주입.
+   - **Check/Act**: `bkit_pdca_analyze`를 활용한 구현 일치율(Gap) 분석 및 보정.
+5. **데이터 무결성 보장**: Context API 기반의 중앙 집중형 상태 관리 체계를 존중하며, 기존 데이터 스키마나 프롭스(Props) 인터페이스를 파괴하지 않습니다.
+6. **로직 독립성**: 보안, 로깅, 비즈니스 로직을 컨텍스트 수준에서 분리하여 가용성과 확장성을 유지합니다.
+7. **Git 자동화 배포 프로토콜 (Release Automation)**:
+   - 모든 수정 완료 후 사용자 승인 시, 다음 3단계를 자동으로 수행합니다.
+     ① `DashboardHeader.jsx` 내 UI 버전 문자열 업데이트.
+     ② `CHANGELOG.md` 내 버전별 히스토리 기록.
+     ③ `git commit` (메시지 형식 준수) 및 `git tag` (SemVer 기반) 생성.
+   - 이를 통해 언제든 특정 버전으로의 **100% 코드 롤백 가용성**을 확보합니다.
 
 ---
 
-## 💡 핵심 원칙 (MLX-DEV / bkit)
+## 🧪 검증 및 품질 관리 절차 (QA Process)
+
+모든 결함 수정은 아래의 **'Test-First'** 절차를 엄격히 준수합니다.
+
+1.  **결함 스크리닝 (Screening)**: 새로운 결함 발견 시, 해당 결함을 재현하는 Playwright 테스트 케이스를 `tests/` 폴더 내에 작성합니다. 수정 전 실행하여 반드시 **Fail**이 뜨는 것을 확인합니다.
+2.  **로직 분석 및 설계 (Plan)**: **gemma4 1차 분석 및 27b 크로스 체크**를 통해 원인을 파악하고 `CHANGELOG.md`에 해결 방안을 기술합니다.
+3.  **코드 수정 (Do)**: 설계된 내용에 따라 소스 코드를 수정합니다.
+4.  **최종 검증 (Verify)**: 작성했던 Playwright 테스트를 재실행하여 **Pass**로 전환됨을 확인하고, 관련 탭의 `deep_scan` 테스트를 통해 사이드 이펙트가 없음을 확증합니다.
+
+---
+
+---
+
+## 🛠 1단계: 서버 사이드 보안 및 데이터 정합성 강화 (Security Hardening)
+- **전략**: **Shadow-to-Light Rollout** (검증 후 강제 적용)
+- **작업 내용**: 
+  - **RLS (Row Level Security)**: `STRICT` 모드 적용. 백엔드 에러는 위생화(Sanitization)하여 프론트엔드 노출 차단.
+  - **Dual-Validation**: 애플리케이션 레이어와 DB 레이어의 중복 권한 검증 체계 구축.
+  - **비동기 무결성 가드**: `AbortController`를 통한 중복 요청 방지 및 레이스 컨디션 차단.
+- **✅ 검증 가이드 (User & Tech Verification)**:
+  - **UX**: 권한 없는 프로젝트 수정 시도 시, 즉시 "접근 권한이 없습니다" 팝업이 뜨는지 확인.
+  - **Tech**: 브라우저 네트워크 탭에서 403 에러 응답 시, DB 내부 정보(테이블명, 로직 등)가 일절 포함되지 않는지 확인.
+  - **Integrity**: 고의로 에러 발생 시, 해당 트랜잭션과 관련된 모든 데이터가 실행 전 상태로 100% 롤백되는지 DB 확인.
+
+## 🛠 2단계: 로직 현대화 및 파편화 (Modernization & Refactoring)
+- **전략**: **Logic-UI Separation** (무중단 리팩토링)
+- **작업 내용**: 
+  - **Custom Hooks**: 1,140줄의 로직을 `useRevisionData`, `useRevisionReducer` 등으로 기능별 분리.
+  - **useReducer**: UI 상태(토글, 로딩 등) 전용 리듀서 도입. 서버 데이터는 React Query/SWR로 격리 관리.
+  - **Atomic Design**: 대형 컴포넌트를 `LogList`, `LogFilter` 등 재사용 가능한 단위로 해체.
+- **✅ 검증 가이드 (User & Tech Verification)**:
+  - **UX**: 리팩토링 전/후 디자인 비교 시 레이아웃, 폰트, 색상 등의 시각적 오차가 0%인지 확인.
+  - **Tech**: React DevTools Profiler를 통해 리팩토링 후 불필요한 리렌더링 횟수가 40% 이상 감소했는지 측정.
+  - **Memory**: 10회 이상 컴포넌트 마운트/언마운트 반복 후 메모리 스냅샷(Heap Snapshot)에 잔존 객체가 없는지 확인.
+
+## 🛠 3단계: 전역 에러 핸들링 및 Undo/Recovery 시스템
+- **전략**: **Command Pattern 기반 무결성 복구**
+- **작업 내용**: 
+  - **ActionLoggerContext**: 모든 상태 변경을 `Command` 객체로 관리하여 타임머신 기능 구현.
+  - **Optimistic Locking**: DB에 `version` 컬럼 도입하여 다중 사용자 충돌 감지 및 해결.
+  - **ErrorBoundary**: 런타임 에러 발생 시 마지막 'Stable State'로의 복구 UI 제공.
+- **✅ 검증 가이드 (User & Tech Verification)**:
+  - **UX**: 수정 작업 후 'Undo' 클릭 시, 데이터가 이전 상태로 즉시 복구되며 사용자 피드백(Toast 등)이 오는지 확인.
+  - **Tech**: 동시 수정 충돌 시, `version` 번호 불일치로 인한 낙관적 잠금 에러(`409 Conflict`)가 정상적으로 발생하는지 확인.
+  - **Recovery**: 고의적 런타임 에러 발생 시 화이트 스크린 대신 '안전한 상태로 복구' 버튼이 있는 에러 페이지가 노출되는지 확인.
+
+---
+
+## 🏁 최종 구현 체크리스트 (Mandatory Guardrails)
+- [ ] **보안**: RLS 에러 위생화 처리 완료 여부
+- [ ] **성능**: `ActionLogger` Ring Buffer(1,000개) 적용 여부
+- [ ] **무결성**: `version` 기반 Optimistic Locking 구현 여부
+- [ ] **안정성**: 24시간 장기 실행 시 메모리 누수 < 5% 검증 여부
+
+---
+
+## 💡 핵심 원칙 (Antigravity v1.3.3+)
 1. **디자인 유지**: UI 디자인, CSS 클래스, 레이아웃 구조는 1%도 수정하지 않습니다. 모든 고도화는 '보이지 않는 로직'에 집중합니다.
-2. **MLX 전담**: SQL 쿼리 설계, 상태 전이 로직 정의 등 논리적 판단이 필요한 영역은 전적으로 로컬 MLX-QWEN 모델의 분석 결과를 따릅니다.
-3. **D2C(Direct-to-Code) 프롬프팅 적용**: MLX 추론 시 '생각 과정'을 생략하고 '코드 결과물'에 집중하는 구조화된 프롬프트를 사용하여 토큰 유실을 방지하고 정합성을 높입니다.
-4. **MLX + bkit 중심의 PDCA 협업**: 
-   - **Plan/Design (MLX/bkit)**: 상세 설계 및 아키텍처 체크.
-   - **Do (Implementation)**: 설계 기반 코드 주입.
-   - **Check/Act (bkit)**: `bkit_pdca_analyze`를 통한 설계 대비 구현 일치율(Gap) 분석 및 보정.
-5. **무결성 보장**: Context API 기반의 중앙 집중형 상태 관리 체계를 존중하며, 기존 프롭스(Props) 인터페이스나 데이터 스키마를 파괴하지 않습니다.
-6. **독립성 보장**: 보안 및 로깅 로직은 비즈니스 로직과 컨텍스트 수준에서 분리하여 가독성과 확장성을 유지합니다.
+2. **멀티 모델 협업**: gemma4(설계)와 27b(감리)의 교차 분석 결과를 절대적으로 준수합니다.
+3. **Git 자동화 배포**: 배포 승인 시 버전 업, 문서 기록, 태그 생성을 자동 수행합니다.
+4. **무결성 최우선**: DB를 '단일 진실 공급원'으로 취급하며 클라이언트 상태는 캐시로 간주합니다.

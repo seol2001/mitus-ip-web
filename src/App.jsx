@@ -5,6 +5,7 @@ import { projectService } from './services/projectService';
 import { useProjectLock } from './hooks/useProjectLock';
 import { useNavigationGuard } from './hooks/useNavigationGuard';
 import { deriveNextRevisionData } from './utils/projectLogic';
+import { canUpdateProject } from './utils/securityUtils';
 import Dashboard from './components/Dashboard';
 import WorkspaceView from './components/WorkspaceView';
 import NewProjectModal from './components/NewProjectModal';
@@ -66,6 +67,10 @@ function App() {
 
   const [lockModalOpen, setLockModalOpen] = useState(false);
   const [lockChecklist, setLockChecklist] = useState([]);
+  
+  // [Unit D] 비동기 요청 취소를 위한 AbortController Ref
+  const saveAbortControllerRef = useRef(null);
+
   // 브라우저 탭 제목 동적 변경 (로컬/배포 구분)
   useEffect(() => {
     const isLocal = import.meta.env.DEV ||
@@ -484,8 +489,35 @@ function App() {
         ));
 
         if (!isDemoMode) {
+          // [Dual-Validation] 서버 요청 전 클라이언트 사이드 권한 1차 검증
+          const currentProjMeta = projectsList.find(p => p.id === currentProjectId);
+          if (!canUpdateProject(currentProjMeta, currentUserId)) {
+            console.error('🚫 [Save Blocked] No ownership or project archived.');
+            showConfirm({
+              title: "저장 실패",
+              message: "편집 권한이 없거나 아카이브된 프로젝트입니다.",
+              type: "danger",
+              showCancel: false
+            });
+            return;
+          }
+
+          // [AbortController] 이전 진행 중인 저장 요청이 있다면 취소 (Race Condition 방지)
+          if (saveAbortControllerRef.current) {
+            saveAbortControllerRef.current.abort();
+            console.log('🛑 [Save Aborted] Previous request cancelled.');
+          }
+          saveAbortControllerRef.current = new AbortController();
+
           console.log(`💾 [Save Start] Project: ${currentProjectId}, Tab: ${tabName}, User: ${currentUserId}`);
-          const { error, count } = await projectService.updateProjectData(currentProjectId, latestUpdatedData, dt, currentUserId);
+          
+          const { error, count } = await projectService.updateProjectData(
+            currentProjectId, 
+            latestUpdatedData, 
+            dt, 
+            currentUserId,
+            saveAbortControllerRef.current.signal // Abort Signal 전달 (향후 서비스 확장용)
+          );
 
           if (error) {
             console.error('❌ [Save Error] Supabase Error:', error);
