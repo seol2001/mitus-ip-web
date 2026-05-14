@@ -28,76 +28,47 @@
 
 ---
 
-## 🐞 수정 목록
+---
 
-### 1. ADD AS COPY 병합 시 히스토리 드롭다운 미표시 이슈
-- **발견 날짜**: 2026-05-09
-- **분석 도구**: gemma4 (1차 분석) & 27b (크로스 체크)
-- **심각도 (Priority)**: 🔴 High (P1) - 핵심 버전 관리 워크플로우 차단
-- **해결 난이도**: 🟢 Low - 상태 배열 업데이트 로직 추가만으로 해결 가능
-- **증상**: 데이터 병합 시 'ADD AS COPY' 옵션을 선택하여 `_Imported` 접미사가 붙은 리비전을 생성했으나, 대시보드의 히스토리 드롭다운 리스트에 나타나지 않음.
-- **원인 분석**: 대시보드의 히스토리 리스트는 프로젝트 테이블의 `phases` 배열 필드를 기반으로 렌더링됨. 현재 `src/App.jsx`의 `handleImportConfirm` 로직에서 병합 시 `project_data` 내부의 리비전 객체는 갱신하지만, 상위 레벨의 `phases` 배열을 업데이트하는 로직이 누락됨.
-- **해결 방안**: `handleImportConfirm` 내에서 `mergedRevisions`의 키 리스트를 추출하여 `phases` 배열을 생성 및 업데이트.
-- **수정 대상 파일**: [App.jsx](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/App.jsx)
-- **검증 테스트**: `tests/bug_screening.spec.js` (Case: "Bug #1")
-- **진행 상태**: ✅ 수정 완료 (2026-05-13)
-- **적용 내용**:
-  - `phases` 배열이 `revisions` 키와 동기화되지 않는 근본 원인 해결
-  - Demo/Real 양 모드에서 `phasesToAdd` 배열로 `overwrite` 및 `ADD AS COPY` 키를 모두 추적
-  - `Array.from(new Set([...phases, ...phasesToAdd]))` 패턴으로 중복 없이 `phases` 갱신
-  - Demo Mode: 백업 프로젝트를 별도 `backupEntries` 배열로 분리하여 리스트에 정상 추가
-  - Real Mode: Optimistic Update + DB 실패 시 롤백 패턴 적용 (27b 크로스 체크 반영)
+## 📅 버전별 수정 히스토리 (Revision Log)
 
-- **진행 상태**: ✅ 수정 완료 (2026-05-13)
-- **적용 내용**:
-  - `src/utils/projectUtils.js`에 `generateBackupProject` 팩토리 함수 도입 (아키텍처 개선)
-  - 타임스탬프 포맷을 `YYYY-MM-DD HH:mm`으로 개선하여 가독성 확보 (gemma4 권고)
-  - `name`과 `project_data.Project_Name`을 동기화하여 데이터 무결성 확보 (27b 권고)
-  - `crypto.randomUUID()`를 활용하여 안전하고 고유한 백업 ID 생성
-  - Demo/Real 모드 로직 통합으로 유지보수성 향상
-- **원인 분석**: `src/App.jsx`의 백업 생성 로직에서 `name` 필드를 재정의하지 않아 원본 값이 그대로 유지됨.
-- **해결 방안**: 백업 객체 생성 시 `name` 필드에 `(백업_timestamp)` 접미사를 추가.
-- **수정 대상 파일**: [App.jsx](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/App.jsx)
-- **검증 테스트**: `tests/bug_screening.spec.js` (Case: "Bug #2")
-- **진행 상태**: 🛠️ 분석 완료 (수정 대기 중)
+### [Ver 1.3.3] ✅ 완료: 드롭다운 UX 고도화
+- **배포 날짜**: 2026-05-14
+- **핵심 수정 사항**:
+  - **바탕화면 클릭(Outside Click) 해제**: `e.target.closest()`와 전역 `mousedown` 리스너를 결합하여 메뉴 외부 클릭 시 드롭다운이 닫히도록 개선.
+  - **ESC 키 해제**: `Escape` 키 입력 시 열려 있는 모든 드롭다운 상태를 일괄 초기화하는 로직 구현.
+  - **성능 및 안정성 확보**: 단일 전역 리스너 및 `cleanup` 처리를 통해 메모리 효율성과 유지보수성 극대화.
 
-- **진행 상태**: ✅ 수정 완료 (2026-05-13)
-- **적용 내용**:
-  - `Gemma4(설계자)` 권고에 따라 **IoC(제어의 역전)** 패턴을 도입하여 `useNavigationGuard`와 `App.jsx` 간의 역할 분리.
-  - `27b(감리관)` 권고에 따라 **2단계 커밋(Confirm → Execute)** 순서를 보장하여 사용자 승인 시에만 종료 로직 실행.
-  - `executeExit` 중앙 집중식 종료 함수를 호출함으로써 **Drain Pattern(진행 중인 저장 대기)** 및 **잠금 해제 API 호출**의 원자성 확보.
-  - 불필요한 개별 상태 리셋 로직을 제거하여 **Single Source of Truth** 유지.
+### [Ver 1.3.2] ✅ 완료: 잠금 시스템 하드닝 (Part 2)
+- **배포 날짜**: 2026-05-14
+- **핵심 수정 사항**:
+  - **자가 침묵(Self-Muting) 결함 해결**: 탈취 진입 시 설정된 `forceLock` 플래그가 세션에 상주하여 나중에 자신이 피해자가 되었을 때 알림을 막던 논리적 모순 해결.
+  - **내부 탈취(Internal Takeover) 시나리오 완성**: 워크스페이스 내부 'Takeover' 버튼 클릭 시 본인의 세션을 즉시 편집 모드로 승격시켜 상대방에게 실시간 경고가 전달되지 않던 문제 해결.
+  - **순환 탈취 알림 보장**: 권한 상실 시 세션 상태를 리셋하여 React가 다음번 상태 변화를 놓치지 않도록 보정.
 
-### 4. ReadOnly 모드 무결성 및 보안 강화 (Hardening)
-- **발견 날짜**: 2026-05-10
-- **분석 도구**: gemma4 (1차 분석) & 27b (크로스 체크)
-- **심각도 (Priority)**: 🔴 Critical (P0) - 데이터 무결성 및 보안 핵심 위험
-- **해결 난이도**: 🔴 High - 하트비트, API 가드, DB 원자적 잠금 등 다층 수정 필요
-- **증상**: 다중 사용자 접속 시 '읽기 전용' 사용자가 데이터를 수정하거나 잠금 권한이 충돌할 가능성 존재.
-- **해결 방안**: 하트비트 표시 개선, API 가드 강화, SQL 원자적 잠금 구현 등.
-- **수정 대상 파일**: [App.jsx](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/App.jsx), [projectService.js](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/services/projectService.js)
-- **검증 테스트**: `tests/auth_security.spec.js`
-- **진행 상태**: ✅ 수정 완료 (2026-05-13)
-- **적용 내용**:
-  - `projectService.js`: 비원자적 상태 접근을 제거하고 `.or()` 쿼리를 활용한 **Atomic Lock** 구현 (Check-and-Set 연산).
-  - `projectService.js` / `App.jsx`: 병합/파생/수정 등 모든 데이터 변경 API에 **`locked_by` 검증 가드(API Guard)** 적용.
-  - `useProjectLock.js` / `App.jsx`: Supabase Realtime을 통한 **즉각적인 잠금 탈취 인지 및 Soft Lock 전환** 구현.
-  - 하트비트 및 폴링 주기 단축(1분)을 통해 연결 불안정 대응력 강화.
+### [Ver 1.3.1] ✅ 완료: 잠금 시스템 하드닝 (Part 1) & 디자인 복구
+- **배포 날짜**: 2026-05-13
+- **핵심 수정 사항**:
+  - **원자적 잠금 탈취(Atomic Seizure) 도입**: Race Condition 방지를 위해 DB 단에서 `locked_by`를 검증하며 업데이트하는 원자적 쿼리 적용.
+  - **의도 기반 2버튼 컨펌**: 기존의 단정적 팝업을 제거하고 '권한 가져오기' vs '읽기 전용 접속' 선택권 부여.
+  - **디자인 레그레션 복구**: 자동 업데이트 과정에서 훼손된 V1.3 대시보드 디자인 및 CSS 정합성 100% 복원.
 
-### 5. 대시보드 잠금 배너 논리적 모순 및 UX 개선
-- **발견 날짜**: 2026-05-13
-- **분석 도구**: gemma4 (디자인) & 27b (감리)
-- **심각도 (Priority)**: 🟡 Medium (P2) - 사용자 시각적 혼동 및 UX 저해
-- **증상**: 본인이 점유한 프로젝트임에도 대시보드에서 타인 점유와 동일한 경고 배너가 표시됨.
-- **원인 분석**: `ProjectCard` 컴포넌트가 소유주를 구분하지 않고 `is_locked` 상태일 경우 일괄적으로 경고 배너를 렌더링함.
-- **해결 방안**: 본인 점유 시 배너 숨김 처리 및 타인 점유 시 '마지막 활동 시간' 명시로 문구 개선.
-- **수정 대상 파일**: [ProjectCard.jsx](file:///Users/jacobseol/Library/CloudStorage/SynologyDrive-DS716p/Antigravity/Mitus_IP_Web/mitus-ip-web/src/components/dashboard/ProjectCard.jsx)
-- **진행 상태**: ✅ 수정 완료 (2026-05-13)
-- **적용 내용**:
-  - `locked_by === currentUser` 조건 시 배너 렌더링 차단 (시각적 노이즈 제거).
-  - `(마지막 활동 N분 전)` 문구 도입으로 시간 정보의 의미 명확화.
-  - 10분 이상 비활성 시 `- 권한 회수 가능` 안내 추가로 사용자 액션 유도.
-  - `useMemo` 적용으로 성능 최적화 및 안정성 확보.
+### [Ver 1.3.0] ✅ 완료: V1.3 디자인 및 기본 로직 안정화
+- **배포 날짜**: 2026-05-12
+- **핵심 수정 사항**:
+  - **ADD AS COPY 동기화**: 데이터 병합 시 `phases` 배열 누락으로 히스토리 드롭다운에 나타나지 않던 이슈 해결.
+  - **백업 프로젝트 명명 규칙**: 백업 생성 시 타임스탬프를 이름에 포함하여 원본과 구별 가능하도록 개선.
+  - **비정상 종료 가드**: 브라우저 닫기/뒤로가기 시 잠금 해제 및 데이터 유실 방지 로직 도입.
+
+---
+
+## 💡 종합 의견 및 전략적 제안
+
+현재 **Ver 1.3.2**까지 완료되면서 잠금 시스템의 논리적 결함(Self-Muting)이 완벽히 해소되었습니다. 다음 단계인 **Ver 1.3.3**에서는 기능적 완성을 넘어 사용자의 편의성(UX)을 극대화하는 작업을 진행할 예정입니다.
+
+1. **품질 진단**: gemma4와 27b의 교차 검증을 통해 '상태 고착' 문제를 찾아낸 것은 매우 성공적이었으며, 이는 단순 코딩보다 **'상태 전이 설계'**가 얼마나 중요한지 보여주는 사례입니다.
+2. **향후 로드맵**: Ver 1.3.3 배포 후 전체 시스템에 대한 **Deep Scan Regression Test**를 수행하여, 다중 사용자 환경에서의 최종 안정성을 확증할 것을 권장합니다.
+
 
 ---
 

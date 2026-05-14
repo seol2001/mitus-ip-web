@@ -102,13 +102,13 @@ export default function ProjectCard({
         <div className="flex flex-col items-end gap-2 relative">
           <button 
             onClick={() => setOpenSettingsId(openSettingsId === project.id ? null : project.id)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors dropdown-trigger"
           >
             <Settings size={18} />
           </button>
           
           {openSettingsId === project.id && (
-            <div className="absolute top-8 right-0 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 overflow-hidden">
+            <div className="absolute top-8 right-0 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 overflow-hidden dropdown-menu">
               <button 
                 onClick={() => {
                   setOpenSettingsId(null);
@@ -258,7 +258,7 @@ export default function ProjectCard({
               {/* 과거 차수 선택 (드롭다운) */}
               <button
                 onClick={() => setOpenDropdownId(openDropdownId === project.id ? null : project.id)}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-all flex items-center gap-1"
+                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-all flex items-center gap-1 dropdown-trigger"
                 title="다른 차수(History) 선택"
               >
                 <History size={18} />
@@ -270,7 +270,7 @@ export default function ProjectCard({
       </div>
 
       {openDropdownId === project.id && (
-        <div className="absolute left-6 right-6 top-[calc(100%-1.5rem)] mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-20 py-2 max-h-48 overflow-y-auto">
+        <div className="absolute left-6 right-6 top-[calc(100%-1.5rem)] mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-20 py-2 max-h-48 overflow-y-auto dropdown-menu">
           {project.phases.slice().reverse().map(phase => {
             const isLatest = (phase === project.latest_evt);
             return (

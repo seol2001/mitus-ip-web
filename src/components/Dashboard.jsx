@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useConfirm } from '../contexts/ConfirmContext';
 
 // 하위 컴포넌트 임포트
@@ -25,6 +25,38 @@ export default function Dashboard({
   const [showArchived, setShowArchived] = useState(false);
   const showConfirm = useConfirm();
   const fileInputRef = useRef(null);
+
+  // [V1.3.3] 드롭다운 외부 클릭 및 ESC 키 해제 로직
+  useEffect(() => {
+    const handleGlobalEvents = (e) => {
+      // 1. ESC 키 감지
+      if (e.key === 'Escape') {
+        setOpenSettingsId(null);
+        setOpenDropdownId(null);
+        return;
+      }
+
+      // 2. 외부 클릭 감지 (mousedown)
+      // 클릭된 지점이 드롭다운 트리거 버튼이나 메뉴 내부가 아닐 경우에만 닫음
+      if (e.type === 'mousedown') {
+        const isTrigger = e.target.closest('.dropdown-trigger');
+        const isMenu = e.target.closest('.dropdown-menu');
+        
+        if (!isTrigger && !isMenu) {
+          setOpenSettingsId(null);
+          setOpenDropdownId(null);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleGlobalEvents);
+    document.addEventListener('keydown', handleGlobalEvents);
+
+    return () => {
+      document.removeEventListener('mousedown', handleGlobalEvents);
+      document.removeEventListener('keydown', handleGlobalEvents);
+    };
+  }, []);
 
   const [isIpDictOpen, setIsIpDictOpen] = useState(false);
   const [isSubBlockOpen, setIsSubBlockOpen] = useState(false);
