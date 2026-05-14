@@ -27,7 +27,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const { 
     ipDropdown, setIpDropdown, statusFilter, setStatusFilter, mode, setMode, 
     handleIpChange: baseIpChange, handleStatusChange, handleModeChange 
-  } = useLogFilter(safeData.initialMode || 'new');
+  } = useLogFilter('All', safeData.initialMode || 'new');
 
   const { 
     latestIssueStates, stats, sortedIssues, issues, historyBlocks 
@@ -90,6 +90,9 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   // ── 미연동 FA 목록 ──
   const unlinkedFasForCurrentIp = useMemo(() => {
     const reports = faReportData?.faReports || [];
+    if (ipDropdown === 'All') {
+      return reports.filter(f => !f.isLinkedToLog);
+    }
     return reports.filter(f => f.ipBlock === ipDropdown && !f.isLinkedToLog);
   }, [faReportData, ipDropdown]);
 
