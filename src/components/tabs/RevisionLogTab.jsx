@@ -3,6 +3,7 @@ import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity
 import IssueSummaryCard from '../IssueSummaryCard';
 import IssueForm from '../IssueForm';
 import ActionBar from '../ActionBar';
+import RevisionLogVirtualList from './RevisionLogVirtualList';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -20,13 +21,16 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const project = overviewData?.Project_Name || 'Proj';
   const stage = currentRevision || 'EVT0';
   const showConfirm = useConfirm();
-  const validIps = useMemo(() => new Set(overviewData?.IP_Blocks || []), [overviewData?.IP_Blocks]);
+  const validIps = useMemo(() => {
+    const map = {};
+    (overviewData?.IP_Blocks || []).forEach(ip => map[ip] = true);
+    return map;
+  }, [overviewData?.IP_Blocks]);
   const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
 
   // 2. Custom Hooks (The Granular Architecture)
   const { 
-    ipDropdown, setIpDropdown, statusFilter, setStatusFilter, mode, setMode, 
-    handleIpChange: baseIpChange, handleStatusChange, handleModeChange 
+    ipDropdown, setIpDropdown, statusFilter, setStatusFilter, mode, setMode
   } = useLogFilter('All', safeData.initialMode || 'new');
 
   const { 
@@ -34,7 +38,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   } = useLogData(safeData, ipDropdown, validIps, project);
 
   const { 
-    formData, editingId, isDirty, isDirtyRef, formResetKey, selectedFaForPull,
+    formData, editingId, isDirtyRef, formResetKey,
     setFormData, setEditingId, setIsDirty, setSelectedFaForPull, handleFormChange, resetForm: baseResetForm
   } = useLogForm(ipDropdown, onFormDirtyChange);
 
@@ -51,13 +55,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const { executeSafe } = useAsyncAction();
 
   // 3. UI/Interaction State
-  const [expandedSections, setExpandedSections] = useState({
-    actionRequired: true,
-    newFindings: true,
-    stillOpen: true,
-    resolved: false
-  });
-  const toggleSection = (key) => setExpandedSections(p => ({ ...p, [key]: !p[key] }));
 
   const [assigneeModal, setAssigneeModal] = useState({ open: false, newAssignee: '' });
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -78,11 +75,11 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
   // ── 가용한 IP 목록 계산 ──
   const availableIps = useMemo(() => {
-    const s = new Set(validIps);
+    const s = Object.keys(validIps);
     let hasOrphans = false;
-    issues?.forEach(i => { if (i?.ipBlock && !validIps.has(i.ipBlock)) hasOrphans = true; });
-    historyBlocks?.forEach(b => b?.issues?.forEach(i => { if (i?.ipBlock && !validIps.has(i.ipBlock)) hasOrphans = true; }));
-    const arr = Array.from(s).sort();
+    issues?.forEach(i => { if (i?.ipBlock && !validIps[i.ipBlock]) hasOrphans = true; });
+    historyBlocks?.forEach(b => b?.issues?.forEach(i => { if (i?.ipBlock && !validIps[i.ipBlock]) hasOrphans = true; }));
+    const arr = s.sort();
     if (hasOrphans) arr.push('Deleted IP (Orphan)');
     return arr;
   }, [validIps, issues, historyBlocks]);
@@ -127,22 +124,39 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const sortedAllIds = useMemo(() => Object.keys(latestIssueStates).sort(), [latestIssueStates]);
 
   const needsEvalSet = useMemo(() => {
-    const evalledIds = new Set(issues.filter(i => i.entryMode === 'eval').map(i => i.targetIssue));
-    return new Set((safeData.loadedIssues || []).filter(id => !evalledIds.has(id)));
+    const evalledIds = {};
+    issues.forEach(i => {
+      if (i.entryMode === 'eval' && i.targetIssue) {
+        evalledIds[i.targetIssue] = true;
+      }
+    });
+    const result = {};
+    (safeData.loadedIssues || []).forEach(id => {
+      if (!evalledIds[id]) result[id] = true;
+    });
+    return result;
   }, [issues, safeData.loadedIssues]);
 
   const carryoverCandidateSet = useMemo(() => {
-    const loadedSet = new Set(safeData.loadedIssues || []);
-    const actedIds = new Set(issues.filter(i => i.entryMode === 'carryover').map(i => i.targetIssue));
-    const candidates = new Set();
+    const loadedMap = {};
+    (safeData.loadedIssues || []).forEach(id => loadedMap[id] = true);
+    
+    const actedIds = {};
+    issues.forEach(i => {
+      if (i.entryMode === 'carryover' && i.targetIssue) {
+        actedIds[i.targetIssue] = true;
+      }
+    });
+    
+    const candidates = {};
     if (historyBlocks.length === 0) return candidates;
     const lastBlk = historyBlocks[historyBlocks.length - 1];
     lastBlk.issues.forEach(item => {
       const id = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
       if (!id) return;
       const status = getIssueStatus(item);
-      if ((status === 'OPEN' || status === 'DEFERRED') && !loadedSet.has(id) && !actedIds.has(id)) {
-        candidates.add(id);
+      if ((status === 'OPEN' || status === 'DEFERRED') && !loadedMap[id] && !actedIds[id]) {
+        candidates[id] = true;
       }
     });
     return candidates;
@@ -164,10 +178,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     }
   }, [ipDropdown, editingId, mode, latestIssueStates]);
 
-  const handleUpdate = useCallback((newIssues) => {
-    const updatedData = { ...safeData, issues: newIssues };
-    if (onImmediateUpdate) onImmediateUpdate(updatedData);
-  }, [safeData, onImmediateUpdate]);
 
   const SEVERITY_FA_MAP = { S1: 'Fail', S2: 'Major', S3: 'Minor' };
 
@@ -300,9 +310,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
   }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm]);
 
-  const availableDispositions = stage === 'EVT0' && mode === 'new'
-    ? DISPOSITION_OPTIONS.filter(opt => opt !== 'Revision')
-    : DISPOSITION_OPTIONS;
 
   const handleEdit = useCallback((item) => {
     setMode(item.faId ? 'fa' : item.entryMode);
@@ -363,6 +370,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const handleTabSwitch = useCallback(async (newMode) => {
     if (mode === newMode) return;
     
+    // [27B 감리] Dirty 상태일 때만 확인 다이얼로그 (기존 로직 유지)
     if (isTabEditing && isDirtyRef.current && !editingId) {
       const confirmed = await showConfirm({
         title: "작성 취소",
@@ -372,9 +380,14 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     
-    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
-    initialFormDataRef.current = null;
-    setIsTabEditing(false);
+    // [27B 감리] 편집 모드 유지 중에는 폼 초기화 생략 (데이터 손실 방지)
+    // 편집 중이 아닐 때만 폼을 초기화하여 깨끗한 상태로 전환
+    if (!isTabEditing) {
+      baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+      initialFormDataRef.current = null;
+    }
+
+    // [핵심 수정] setIsTabEditing(false) 제거 → 탭 전환 시에도 편집 모드 유지
     setMode(newMode);
   }, [mode, editingId, showConfirm, ipDropdown, latestIssueStates, isTabEditing, baseResetForm, setMode]);
 
@@ -397,9 +410,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     // [보안 가드] 삭제 작업도 executeSafe로 관리
     await executeSafe(async (signal) => {
       const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
-      const targetId = (item.entryMode === 'new' || item.entryMode === 'fa')
-        ? `${item.ipBlock}.${project}.${item.issueNum}`
-        : item.targetIssue || item.id;
 
       const confirmed = await showConfirm({
         title: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
@@ -422,17 +432,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     });
   }, [showConfirm, project, issues, onSubmit, safeData, markFaLinkState, editingId, cancelEdit, executeSafe]);
 
-  const handleInput = (e) => {
-    const { name, value } = e.target;
-    const nextData = { ...formData, [name]: value };
-    handleFormChange(nextData, initialFormDataRef.current);
-  };
-
-  const handleTypeToggle = (t) => {
-    const cur = formData.types || [];
-    const nextTypes = cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t];
-    handleFormChange({ ...formData, types: nextTypes }, initialFormDataRef.current);
-  };
 
   const confirmAssigneeChange = () => {
     if (assigneeModal.newAssignee) {
@@ -442,33 +441,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     setAssigneeModal({ open: false, newAssignee: '' });
   };
 
-  const renderHistoricalContext = (id) => {
-    const h = getHistory(id, historyBlocks, issues, project, stage);
-    if (h.length === 0) return null;
-    const prev = h.length > 1 ? h[h.length - 2] : null;
-    const cur = h[h.length - 1];
-    
-    const getGapStr = (data) => {
-      if (!data.verificationGap) return '';
-      return ` (Gap: ${data.verificationGap}${data.gapComment ? ` - ${data.gapComment}` : ''})`;
-    };
-    
-    return (
-      <div className="mt-2 bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1">
-        <div className="font-bold text-slate-700 mb-1 flex items-center gap-1.5"><Activity size={12}/> Historical Context</div>
-        {prev && (
-          <div className="text-slate-500 truncate">
-            <span className="font-semibold">[{prev.stage}]</span> {prev.data.disposition || prev.data.assessment || 'N/A'} - {prev.data.phenomenon || prev.data.comment || 'N/A'}
-            {getGapStr(prev.data)}
-          </div>
-        )}
-        <div className="text-slate-800 font-medium truncate">
-          <span className="font-semibold text-blue-600">[{cur.stage} - 최신]</span> {cur.data.disposition || cur.data.assessment || 'N/A'} - {cur.data.phenomenon || cur.data.comment || cur.data.reopenReason || 'N/A'}
-          {getGapStr(cur.data)}
-        </div>
-      </div>
-    );
-  };
 
   const handleLock = () => {
     if (onSubmit) onSubmit(safeData);
@@ -573,6 +545,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
           stage={stage}
           project={project}
           currentSelectedIp={ipDropdown}
+          availableIps={availableIps}
           latestIssueStates={latestIssueStates}
           historyBlocks={historyBlocks}
           issues={issues}
@@ -617,264 +590,26 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
           </div>
           <div className="px-5 pb-5 flex-1">
             <div className="space-y-2">
-              {(() => {
-              // ── 이번 차수에서 이미 action 취해진 ID 집합 (중복 제거용) ──
-              const actedThisStage = new Set(
-                issues.map(i => (i.entryMode === 'new' || i.entryMode === 'fa')
-                  ? `${i.ipBlock}.${project}.${i.issueNum}`
-                  : i.targetIssue
-                ).filter(Boolean)
-              );
-
-              // ── [1] eval 평가 대기 가상 카드: loadedIssues 중 eval 미완료 + action 없는 항목 ──
-              const pendingEvalItems = (safeData.loadedIssues || [])
-                .filter(id => needsEvalSet.has(id) && !actedThisStage.has(id))
-                .filter(id => {
-                  const ip = id.split('.')[0];
-                  return ipDropdown === 'All' ? true : ip === ipDropdown;
-                })
-                .filter(() => statusFilter === 'ALL' || statusFilter === 'OPEN');
-
-              // ── [2] CARRY-OVER 가상 카드: eval 대상 아닌 미해결 이슈 중 action 없는 항목 ──
-              const pendingCarryoverItems = Array.from(carryoverCandidateSet)
-                .filter(id => !actedThisStage.has(id))
-                .filter(id => {
-                  const ip = id.split('.')[0];
-                  return ipDropdown === 'All' ? true : ip === ipDropdown;
-                })
-                .filter(() => statusFilter === 'ALL' || statusFilter === 'OPEN');
-
-              // ── [3] 현재 차수 실제 이슈 카드 ──
-              const curFiltered = sortedIssues
-                .filter(i => {
-                  if (ipDropdown === 'All') return true;
-                  // new/fa 모드: ipBlock 직접 비교
-                  if (i.entryMode === 'new' || i.entryMode === 'fa') {
-                    return (i.ipBlock || '') === ipDropdown;
-                  }
-                  // eval/reopen/carryover: targetIssue의 첫 세그먼트로 비교
-                  const ipFromTarget = i.targetIssue ? i.targetIssue.split('.')[0] : '';
-                  return ipFromTarget === ipDropdown;
-                })
-                .filter(i => {
-                  if (statusFilter === 'ALL') return true;
-                  const st = getIssueStatus(i);
-                  if (statusFilter === 'OPEN' && st === 'OPEN') return true;
-                  if (statusFilter === 'DEF' && st === 'DEFERRED') return true;
-                  if (statusFilter === 'CLOSED' && st === 'CLOSED') return true;
-                  return false;
-                });
-
-              const hasAny = pendingEvalItems.length > 0 || pendingCarryoverItems.length > 0 || curFiltered.length > 0;
-              if (!hasAny) {
-                return <div className="text-center text-gray-400 py-8 bg-white rounded-lg border border-dashed border-gray-300"><p>해당 상태의 이슈가 없습니다.</p></div>;
-              }
-
-              // 히스토리에서 원본 이슈 메타 조회 (공통 헬퍼)
-              const findOriginItem = (id) => {
-                for (const blk of historyBlocks) {
-                  const found = blk.issues.find(i => {
-                    const iId = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
-                    return iId === id;
-                  });
-                  if (found) return found;
-                }
-                return null;
-              };
-
-              const newFindings = curFiltered.filter(item => {
-                return getIssueStatus(item) === 'OPEN' && (item.entryMode === 'new' || item.entryMode === 'fa');
-              });
-              const stillOpenIssues = curFiltered.filter(item => {
-                return getIssueStatus(item) === 'OPEN' && item.entryMode !== 'new' && item.entryMode !== 'fa';
-              });
-              const resolvedDeferredIssues = curFiltered.filter(item => {
-                const st = getIssueStatus(item);
-                return st === 'CLOSED' || st === 'DEFERRED';
-              });
-
-              return (
-                <>
-                  {/* Section 1: [ACTION REQUIRED] */}
-                  {(pendingEvalItems.length > 0 || pendingCarryoverItems.length > 0) && (
-                    <div className="mb-6">
-                      <div 
-                        onClick={() => toggleSection('actionRequired')}
-                        className="flex items-center justify-between mb-3 border-b border-red-200 pb-2 cursor-pointer hover:bg-red-50/50 px-2 -mx-2 rounded-lg transition-colors group"
-                      >
-                        <h3 className="text-sm font-semibold text-red-600 flex items-center gap-2">
-                          <span className="text-red-400 group-hover:text-red-600 transition-colors">
-                            {expandedSections.actionRequired ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                          </span>
-                          <AlertCircle size={16} /> [ACTION REQUIRED] 조치 필요 항목
-                        </h3>
-                        <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{pendingEvalItems.length + pendingCarryoverItems.length}건</span>
-                      </div>
-                      {expandedSections.actionRequired && (
-                        <div className="space-y-2 animate-in fade-in duration-200 slide-in-from-top-1">
-                        {pendingEvalItems.map(id => {
-                          const originItem = findOriginItem(id);
-                          const virtualItem = originItem
-                            ? { ...originItem, id: `pending-eval-${id}`, _isPendingEval: true }
-                            : { id: `pending-eval-${id}`, entryMode: 'new', ipBlock: id.split('.')[0], issueNum: id.split('#')[1] ? `ISSUE#${id.split('#')[1]}` : id, _isPendingEval: true };
-                          return (
-                            <IssueSummaryCard
-                              key={`pending-eval-${id}`}
-                              item={virtualItem}
-                              project={project}
-                              isReadOnly={true}
-                              expandable
-                              onEdit={handleHistoryCardClick}
-                              historyStage={historyBlocks[historyBlocks.length - 1]?.stageName}
-                              needsEval={true}
-                            />
-                          );
-                        })}
-                        {pendingCarryoverItems.map(id => {
-                          const originItem = findOriginItem(id);
-                          const coVirtual = originItem
-                            ? { ...originItem, id: `pending-co-${id}`, _isCarryover: true }
-                            : { id: `pending-co-${id}`, entryMode: 'new', ipBlock: id.split('.')[0], issueNum: id.split('#')[1] ? `ISSUE#${id.split('#')[1]}` : id, _isCarryover: true };
-                          return (
-                            <IssueSummaryCard
-                              key={`pending-co-${id}`}
-                              item={coVirtual}
-                              project={project}
-                              isReadOnly={true}
-                              expandable
-                              onEdit={handleHistoryCardClick}
-                              historyStage={historyBlocks[historyBlocks.length - 1]?.stageName}
-                              needsEval={false}
-                            />
-                          );
-                        })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Section 2: [NEW FINDINGS] */}
-                  {newFindings.length > 0 && (
-                    <div className="mb-6">
-                      <div 
-                        onClick={() => toggleSection('newFindings')}
-                        className="flex items-center justify-between mb-3 border-b border-blue-200 pb-2 cursor-pointer hover:bg-blue-50/50 px-2 -mx-2 rounded-lg transition-colors group"
-                      >
-                        <h3 className="text-sm font-semibold text-blue-700 flex items-center gap-2">
-                          <span className="text-blue-400 group-hover:text-blue-700 transition-colors">
-                            {expandedSections.newFindings ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                          </span>
-                          <Plus size={16} /> [NEW FINDINGS] 신규 등록 리스크
-                        </h3>
-                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">{newFindings.length}건</span>
-                      </div>
-                      {expandedSections.newFindings && (
-                        <div className="space-y-2 animate-in fade-in duration-200 slide-in-from-top-1">
-                        {newFindings.map(item => {
-                          const itemIssueId = item.entryMode === 'new'
-                            ? `${item.ipBlock}.${project}.${item.issueNum}`
-                            : item.targetIssue;
-                          return (
-                            <IssueSummaryCard
-                              key={item.id}
-                              item={item}
-                              project={project}
-                              isReadOnly={isReadOnly}
-                              editingId={editingId}
-                              onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
-                              currentStage={stage}
-                              needsEval={needsEvalSet.has(itemIssueId)}
-                            />
-                          );
-                        })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Section 3: [STILL OPEN / PERSISTENT] */}
-                  {stillOpenIssues.length > 0 && (
-                    <div className="mb-6">
-                      <div 
-                        onClick={() => toggleSection('stillOpen')}
-                        className="flex items-center justify-between mb-3 border-b border-orange-300 pb-2 cursor-pointer hover:bg-orange-50/50 px-2 -mx-2 rounded-lg transition-colors group"
-                      >
-                        <h3 className="text-sm font-semibold text-orange-700 flex items-center gap-2">
-                          <span className="text-orange-400 group-hover:text-orange-700 transition-colors">
-                            {expandedSections.stillOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                          </span>
-                          <Activity size={16} /> [STILL OPEN / PERSISTENT] 관리 중인 기술 부채
-                        </h3>
-                        <span className="text-[11px] font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full">{stillOpenIssues.length}건</span>
-                      </div>
-                      {expandedSections.stillOpen && (
-                        <div className="space-y-2 animate-in fade-in duration-200 slide-in-from-top-1">
-                        {stillOpenIssues.map(item => {
-                          const itemIssueId = item.entryMode === 'new'
-                            ? `${item.ipBlock}.${project}.${item.issueNum}`
-                            : item.targetIssue;
-                          return (
-                            <IssueSummaryCard
-                              key={item.id}
-                              item={item}
-                              project={project}
-                              isReadOnly={isReadOnly}
-                              editingId={editingId}
-                              onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
-                              currentStage={stage}
-                              needsEval={needsEvalSet.has(itemIssueId)}
-                            />
-                          );
-                        })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Section 4: [RESOLVED / DEFERRED] */}
-                  {resolvedDeferredIssues.length > 0 && (
-                    <div className="mb-6 opacity-80 hover:opacity-100 transition-opacity">
-                      <div 
-                        onClick={() => toggleSection('resolved')}
-                        className="flex items-center justify-between mb-3 border-b border-gray-200 pb-2 cursor-pointer hover:bg-gray-100/50 px-2 -mx-2 rounded-lg transition-colors group"
-                      >
-                        <h3 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
-                          <span className="text-gray-400 group-hover:text-gray-600 transition-colors">
-                            {expandedSections.resolved ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                          </span>
-                          <CheckCircle size={16} /> [RESOLVED / DEFERRED] 조치 완료 및 유보
-                        </h3>
-                        <span className="text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{resolvedDeferredIssues.length}건</span>
-                      </div>
-                      {expandedSections.resolved && (
-                        <div className="space-y-2 animate-in fade-in duration-200 slide-in-from-top-1">
-                        {resolvedDeferredIssues.map(item => {
-                          const itemIssueId = item.entryMode === 'new'
-                            ? `${item.ipBlock}.${project}.${item.issueNum}`
-                            : item.targetIssue;
-                          return (
-                            <IssueSummaryCard
-                              key={item.id}
-                              item={item}
-                              project={project}
-                              isReadOnly={isReadOnly}
-                              editingId={editingId}
-                              onEdit={isReadOnly ? handleView : handleEdit}
-                              onDelete={isReadOnly ? undefined : handleDeleteRequest}
-                              currentStage={stage}
-                              needsEval={needsEvalSet.has(itemIssueId)}
-                            />
-                          );
-                        })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+              <RevisionLogVirtualList
+                issues={issues}
+                safeData={safeData}
+                project={project}
+                ipDropdown={ipDropdown}
+                statusFilter={statusFilter}
+                needsEvalSet={needsEvalSet}
+                carryoverCandidateSet={carryoverCandidateSet}
+                sortedIssues={sortedIssues}
+                historyBlocks={historyBlocks}
+                isReadOnly={isReadOnly}
+                editingId={editingId}
+                stage={stage}
+                handlers={{
+                  handleHistoryCardClick,
+                  handleView,
+                  handleEdit,
+                  handleDeleteRequest
+                }}
+              />
           </div>
 
           {historyBlocks.length > 0 && (

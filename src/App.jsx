@@ -441,32 +441,52 @@ function App() {
   const handleEditingStateChange = useCallback((isEditing) => {
     setIsGloballyEditing(isEditing);
     if (isEditing) {
-      const currentSnap = latestDataRef.current?.revisions[currentViewedRevision];
-      // [보안/성능] structuredClone을 사용하여 데이터 무결성 보장 (기존 JSON 방식 대체)
-      originalDataSnapshot.current = currentSnap ? structuredClone(currentSnap) : null;
+      // [27B 감리] 리비전의 전체 필드(overview, ipIndex, revisionLog, faReport)를 포함하는 
+      // 완전한 객체 스냅샷을 캡처해야 함. 일부만 캡처될 경우 복구 시 데이터 실종 유발.
+      const currentRevisionData = latestDataRef.current?.revisions?.[currentViewedRevision];
+      
+      if (currentRevisionData) {
+        // [보안/무결성] 전체 구조를 깊은 복사하여 원본 보존
+        originalDataSnapshot.current = structuredClone(currentRevisionData);
+      } else {
+        originalDataSnapshot.current = null;
+      }
       isDirtyRef.current = false;
     } else {
       isDirtyRef.current = false;
-      originalDataSnapshot.current = null;
+      // UI 해제 시 스냅샷 보존 (복구 로직에서 수동 제거)
     }
   }, [currentViewedRevision]);
 
   // ─── [신규] 변경 사항 폐기 및 원래 상태로 복구 (Rollback) ───
   const discardProjectChanges = useCallback(() => {
     if (originalDataSnapshot.current) {
+      const snapshot = originalDataSnapshot.current;
+      const targetRev = currentViewedRevision;
+
       setProjectData(prev => {
         if (!prev) return prev;
+        
+        // [27B 감리] 파괴적 덮어쓰기 방지: 스냅샷이 혹시 불완전하더라도 기존의 필수 필드를 날리지 않도록 병합
+        const existingRev = prev.revisions?.[targetRev] || {};
+        const restoredRev = {
+          ...existingRev, // 기존 데이터 (보험)
+          ...snapshot     // 스냅샷 데이터 (복구)
+        };
+
         return {
           ...prev,
           revisions: {
             ...prev.revisions,
-            [currentViewedRevision]: structuredClone(originalDataSnapshot.current)
-          }
+            [targetRev]: restoredRev
+          },
+          // [27B 감리] 복구 시에도 버전을 올려 자식 컴포넌트의 리렌더링 강제 유도
+          version: (prev.version || 0) + 1,
+          lastSynced: Date.now()
         };
       });
-      // [버그2 픽스] setRollbackCounter 제거: 강제 리마운트가 tabRef를 무효화시켜
-      // 이후 resetForm 호출 시 Blank 화면을 유발하는 근본 원인이었음.
-      // 스냅샷 데이터 복원만으로 충분히 UI가 원상 복구됨.
+      
+      // 복구가 완료된 후 스냅샷 비움
       originalDataSnapshot.current = null;
       isDirtyRef.current = false;
       setIsFormDirty(false);
@@ -533,9 +553,6 @@ function App() {
       }
 
       // 1. 로컬 상태 업데이트 및 최신 데이터 캡처
-      // [버그1 근본 수정] latestUpdatedData를 setProjectData 업데이터 내부에서 캡처하는 방식은
-      // React 18 Concurrent Mode에서 업데이터가 지연 실행될 경우 null이 될 수 있음.
-      // 대신 latestDataRef(최신 렌더 상태)를 직접 병합하여 동기적으로 구성.
       const prevData = latestDataRef.current;
       const latestUpdatedData = prevData ? {
         ...prevData,
@@ -548,18 +565,42 @@ function App() {
         }
       } : null;
 
-      // 로컬 상태도 동일하게 업데이트
-      if (latestUpdatedData) {
-        setProjectData(latestUpdatedData);
-      }
+      // [V1.4.3 / 27B P0 수정] setProjectData를 prev 기반 함수형 업데이터로 교체.
+      // 기존 패턴(latestDataRef 기반 덮어쓰기)은 handleLocalUpdate가 큐에 쌓아둔
+      // 변경사항을 silently 증발시키는 "Lost Update" 버그의 근본 원인이었음.
+      setProjectData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          revisions: {
+            ...prev.revisions,
+            [currentRevisionId]: {
+              ...(prev.revisions?.[currentRevisionId] || {}),
+              [tabName]: newData
+            }
+          },
+          version: (prev.version || 0) + 1,
+          lastSynced: Date.now()
+        };
+      });
 
-      // 2. 비동기 DB 저장 프로세스
+      // 2. 비동기 DB 저장 프로세스 + 대시보드 projectsList 동기화
+      // [27B] latestUpdatedData는 stale할 수 있으므로, projectsList 동기화도 최신 prev 기반으로 처리
       if (latestUpdatedData) {
         const dt = new Date().toISOString();
+        const dataForDb = {
+          ...latestUpdatedData,
+          revisions: {
+            ...latestUpdatedData.revisions,
+            [currentRevisionId]: {
+              ...(latestUpdatedData.revisions?.[currentRevisionId] || {}),
+              [tabName]: newData
+            }
+          }
+        };
 
-        // [수정] 대시보드 동기화: Demo 모드든 Supabase 모드든 projectsList를 즉시 업데이트하여 대시보드 정합성 확보
         setProjectsList(prev => prev.map(p =>
-          p.id === currentProjectId ? { ...p, project_data: latestUpdatedData, updated: dt } : p
+          p.id === currentProjectId ? { ...p, project_data: dataForDb, updated: dt } : p
         ));
 
         if (!isDemoMode) {
@@ -604,6 +645,10 @@ function App() {
         }
       }
 
+      // [V1.4.3 / 근본 버그 수정] 저장 성공 시 originalDataSnapshot 즉시 클리어.
+      // 클리어하지 않으면 handleTabClick의 discardProjectChanges()가 저장된 데이터를 덮어쓰는 버그 발생.
+      originalDataSnapshot.current = null;
+
       if (clearDirty) {
         // [자동 저장용] 저장이 완료되었으므로 더티 상태를 해제하여 모달이 뜨지 않도록 함
         isDirtyRef.current = false;
@@ -611,7 +656,7 @@ function App() {
         isFormDirtySyncRef.current = false;
       } else if (isGloballyEditing) {
         // [명시적 저장용] 저장이 완료되어도 락이 걸려있는 한 글로벌 에디팅 상태 유지
-        isDirtyRef.current = false; 
+        isDirtyRef.current = false;
         setIsFormDirty(false);
         isFormDirtySyncRef.current = false;
       }
@@ -628,6 +673,7 @@ function App() {
 
     // ── [2중 가드] 통합 경로 적용 ──
     let canProceed = true;
+    let shouldDiscard = false; // [V1.4.3 / 근본 버그 수정] 사용자가 명시적으로 '복구'를 선택한 경우에만 true
     const isInternalDirty = tabRef.current?.canNavigate?.() === false;
 
     if (isInternalDirty || (isGloballyEditing && isDirtyRef.current) || isFormDirtySyncRef.current) {
@@ -638,24 +684,26 @@ function App() {
         cancelText: "계속 수정하기",
         type: "warning"
       });
+      if (canProceed) {
+        shouldDiscard = true; // 사용자가 명시적으로 '복구' 선택
+      }
     }
 
     if (canProceed) {
-      // [버그2 최종 수정] AnimatePresence mode="sync"와 함께 적용.
-      // 탭 전환(setActiveTab)을 먼저 실행하여 새 탭을 마운트하고,
-      // 데이터 복원(discardProjectChanges)은 requestAnimationFrame으로
-      // 다음 페인트 사이클에 분리하여 exit 중인 컴포넌트와의 충돌을 원천 차단.
+      if (shouldDiscard) {
+        // 사용자가 저장하지 않고 복구를 선택한 경우에만 스냅샷으로 데이터 복원
+        discardProjectChanges();
+      } else {
+        // 이미 저장했거나 dirty 상태가 없는 경우: 스냅샷만 클리어 (데이터 복원 불필요)
+        originalDataSnapshot.current = null;
+      }
+
       tabRef.current?.resetForm?.();
       setIsGloballyEditing(false);
       isDirtyRef.current = false;
       setIsFormDirty(false);
       isFormDirtySyncRef.current = false;
-      setActiveTab(tab); // 1. 먼저 탭 전환
-
-      // 2. 다음 페인트 사이클에 데이터 복원 (exit 애니메이션과 setProjectData 충돌 방지)
-      requestAnimationFrame(() => {
-        discardProjectChanges();
-      });
+      setActiveTab(tab);
     }
   }, [activeTab, isGloballyEditing, isFormDirty, showConfirm, discardProjectChanges]);
 

@@ -35,6 +35,14 @@
 
 ## 📅 버전별 수정 히스토리 (Revision Log)
 
+### [Ver 1.4.3] ✅ 완료: Unit D Step 4 - 데이터 무결성 하드닝 및 편집 UX 개선
+- **배포 날짜**: 2026-05-15
+- **핵심 수정 사항**:
+  - **탭 전환 데이터 무결성(Stale State) 근본 수정**: 저장 후 내부 탭 이동 시 `handleTabClick`이 `discardProjectChanges`를 무조건 호출하여 저장된 데이터를 덮어쓰던 치명적 결함 해결. 명시적 복구 선택 시에만 스냅샷을 사용하도록 구조 개선.
+  - **Revision Log 편집 모드 지속성 확보**: 탭 내부 메뉴 이동이나 다른 탭 방문 후 복귀 시에도 '편집 시작' 상태가 해제되지 않도록 상태 관리 로직 고도화.
+  - **IP Block 드롭다운 전환 및 무결성 강화**: Revision Log의 IP Block 입력 필드를 프로젝트에 선언된 IP 목록 기반 드롭다운으로 교체하고, 'All' 값 저장을 원천 차단하여 데이터 정합성 확보.
+  - **Atomic State Update (prev 기반) 전면 적용**: `setProjectData`를 stale한 `latestDataRef` 기반에서 100% 함수형 업데이터(`prev`) 기반으로 전환하여 비동기 경합에 의한 데이터 유실(Lost Update) 원천 차단.
+
 ### [Ver 1.4.2] ✅ 완료: Unit D Step 3 - 필터 UX 및 데이터 연동 고도화
 - **배포 날짜**: 2026-05-14
 - **핵심 수정 사항**:

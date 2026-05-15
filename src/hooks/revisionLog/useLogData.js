@@ -30,7 +30,7 @@ export const useLogData = (safeData, ipDropdown, validIps, project) => {
         ? item?.ipBlock 
         : (item?.targetIssue ? item.targetIssue.split('.')[0] : '');
       
-      const mappedIp = validIps.has(ip) ? ip : 'Deleted IP (Orphan)';
+      const mappedIp = validIps[ip] ? ip : 'Deleted IP (Orphan)';
       
       if (ipDropdown === 'All' || mappedIp === ipDropdown) {
         total++;
@@ -54,8 +54,8 @@ export const useLogData = (safeData, ipDropdown, validIps, project) => {
       const ipA = isNewLike(a?.entryMode) ? a?.ipBlock : (a?.targetIssue ? a.targetIssue.split('.')[0] : '');
       const ipB = isNewLike(b?.entryMode) ? b?.ipBlock : (b?.targetIssue ? b.targetIssue.split('.')[0] : '');
 
-      const mappedIpA = validIps.has(ipA) ? ipA : 'Deleted IP (Orphan)';
-      const mappedIpB = validIps.has(ipB) ? ipB : 'Deleted IP (Orphan)';
+      const mappedIpA = validIps[ipA] ? ipA : 'Deleted IP (Orphan)';
+      const mappedIpB = validIps[ipB] ? ipB : 'Deleted IP (Orphan)';
 
       if (ipDropdown === 'All') {
         if (mappedIpA !== mappedIpB) return mappedIpA.localeCompare(mappedIpB);

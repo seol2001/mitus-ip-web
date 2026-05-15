@@ -32,6 +32,7 @@ export default function IssueForm({
   stage,
   project,
   currentSelectedIp,
+  availableIps,
   latestIssueStates,
   historyBlocks,
   issues,
@@ -150,12 +151,18 @@ export default function IssueForm({
     : DISPOSITION_OPTIONS;
 
   const closedIssues = useMemo(() => {
-    const fixedThisStage = new Set(
-      issues.filter(i => i.entryMode === 'eval' && i.assessment === 'Fixed').map(i => i.targetIssue)
-    );
+    const fixedThisStageMap = {};
+    issues
+      .filter(i => i.entryMode === 'eval' && i.assessment === 'Fixed')
+      .forEach(i => {
+        if (i.targetIssue) fixedThisStageMap[i.targetIssue] = true;
+      });
+
     const closed = [];
     Object.entries(latestIssueStates).forEach(([id, st]) => {
-      if (getIssueStatus(st) === 'CLOSED' && !fixedThisStage.has(id)) closed.push(id);
+      if (getIssueStatus(st) === 'CLOSED' && !fixedThisStageMap[id]) {
+        closed.push(id);
+      }
     });
     return closed.sort();
   }, [latestIssueStates, issues]);
@@ -237,7 +244,32 @@ export default function IssueForm({
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="w-full sm:w-[25%] shrink-0">
                 <label className={lc}>IP Block</label>
-                <div className="h-10 px-3 flex items-center bg-blue-50 border border-blue-200 rounded-md text-sm font-bold text-blue-800">{currentSelectedIp}</div>
+                {/* [27B 감리] 'All' 차단: IP는 실제 선언된 IP 목록에서만 선택 가능 */}
+                {currentSelectedIp === 'All' ? (
+                  <select
+                    value={formData.ipBlock || ''}
+                    onChange={(e) => {
+                      const newIp = e.target.value;
+                      // [보안] allowlist 검증: availableIps에 없는 값 차단
+                      if (!newIp || !(availableIps || []).includes(newIp)) return;
+                      const newNum = calcNextNum(newIp, latestIssueStates);
+                      const nextData = { ...formData, ipBlock: newIp, issueNum: newNum, subBlock: null };
+                      setFormData(nextData);
+                      if (onChange) onChange(nextData);
+                    }}
+                    disabled={isReadOnly}
+                    className={`w-full h-10 ${ic} font-bold text-blue-800 bg-blue-50 border-blue-200`}
+                  >
+                    <option value="">-- IP 선택 --</option>
+                    {(availableIps || []).filter(ip => ip !== 'All' && ip !== 'Deleted IP (Orphan)').map(ip => (
+                      <option key={ip} value={ip}>{ip}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="h-10 px-3 flex items-center bg-blue-50 border border-blue-200 rounded-md text-sm font-bold text-blue-800">
+                    {currentSelectedIp}
+                  </div>
+                )}
               </div>
               {ipIndexData && ipIndexData[currentSelectedIp] && ipIndexData[currentSelectedIp].Sub_Blocks && ipIndexData[currentSelectedIp].Sub_Blocks.length > 0 && (
                 <div className="w-full sm:w-[30%] shrink-0">
@@ -413,7 +445,7 @@ export default function IssueForm({
                     {it.carryoverAction === 'Close' ? `🟢 [이월-DONE] ${it.targetIssue}` : `🟠 [이월-OPEN] ${it.targetIssue}`}
                   </option>
                 ))}
-                {Array.from(carryoverCandidateSet || [])
+                {Object.keys(carryoverCandidateSet || {})
                   .filter(id => !issues.some(i => i.entryMode === 'carryover' && i.targetIssue === id))
                   .sort()
                   .map(id => <option key={id} value={id} style={{ color: '#c2410c' }}>{`🟠 [이월-OPEN] ${id}`}</option>)

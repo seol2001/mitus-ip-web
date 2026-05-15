@@ -85,8 +85,13 @@ const ProjectOverviewTab = forwardRef(({ data, currentStage, isArchived, lockRea
     canNavigate: async () => true, // Overview는 현재 별도의 Dirty 가드가 필요 없음
     resetForm: () => {
       setUnlockedOverview(false);
+      // [Gemma4/27B 합의 수정] 탭 전환 복구 시 로컬 schema 상태를 명시적 초기화.
+      // useEffect의 [safeData.UI_Schemas] 참조 동일성 트랩을 우회하는 직접 초기화.
+      setOverviewSchema(safeData.UI_Schemas?.Contents || DEFAULT_OVERVIEW_SCHEMA);
+      setSpecsSchema(safeData.UI_Schemas?.Specs || MAJOR_SPECS_SCHEMA);
+      setOrgSchema(safeData.UI_Schemas?.Organization || ORGANIZATION_SCHEMA);
     }
-  }));
+  }), [safeData.UI_Schemas]);
   
   const showConfirm = useConfirm();
   
@@ -116,10 +121,12 @@ const ProjectOverviewTab = forwardRef(({ data, currentStage, isArchived, lockRea
   });
 
   useEffect(() => {
-    if (safeData.UI_Schemas?.Contents) setOverviewSchema(safeData.UI_Schemas.Contents);
-    if (safeData.UI_Schemas?.Specs) setSpecsSchema(safeData.UI_Schemas.Specs);
-    if (safeData.UI_Schemas?.Organization) setOrgSchema(safeData.UI_Schemas.Organization);
-  }, [safeData.UI_Schemas]);
+    // [Gemma4 설계 반영] UI_Schemas 뿐만 아니라 내부 데이터(Contents, Specs 등)의 
+    // 실제 값이 변경되었을 때도 로컬 스키마 상태를 동기화해야 Stale State 버그가 발생하지 않음.
+    setOverviewSchema(safeData.UI_Schemas?.Contents || DEFAULT_OVERVIEW_SCHEMA);
+    setSpecsSchema(safeData.UI_Schemas?.Specs || MAJOR_SPECS_SCHEMA);
+    setOrgSchema(safeData.UI_Schemas?.Organization || ORGANIZATION_SCHEMA);
+  }, [safeData.UI_Schemas, safeData.Contents, safeData.Specs, safeData.Organization]);
 
   const isOverviewDisabled = isArchived || !unlockedOverview;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
