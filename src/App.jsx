@@ -71,6 +71,12 @@ function App() {
   // [Unit D] 비동기 요청 취소를 위한 AbortController Ref
   const saveAbortControllerRef = useRef(null);
 
+  // [Unit D] 전역 저장 상태 UX 가드 (Atomic Counter-to-Boolean Sync)
+  const [isGlobalSaving, setIsGlobalSaving] = useState(false);
+  const updateGlobalSavingState = useCallback(() => {
+    setIsGlobalSaving(pendingSavesRef.current > 0);
+  }, []);
+
   // 브라우저 탭 제목 동적 변경 (로컬/배포 구분)
   useEffect(() => {
     const isLocal = import.meta.env.DEV ||
@@ -540,6 +546,7 @@ function App() {
 
     // [중요] 레이스 컨디션 방지: 함수 진입 즉시 펜딩 카운트 증가 (동기적)
     pendingSavesRef.current++;
+    updateGlobalSavingState(); // UI 가드 활성화
 
     // [중요] 비동기 클로저 캡처: 비동기 실행 중 전역 상태가 바뀌어도 영향받지 않도록 모든 필요 정보 캡처
     const currentProjectId = activeProject?.id;
@@ -665,6 +672,7 @@ function App() {
     } finally {
       // 작업 완료 후 (성공/실패 무관) 카운트 감소
       pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+      updateGlobalSavingState(); // UI 가드 해제 (0일 때만 꺼짐)
     }
   }, [isArchived, isGloballyEditing, currentViewedRevision, activeProject, isDemoMode, currentUser]);
 
@@ -1718,6 +1726,17 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* [Unit D] 비동기 저장 중 사용자 보호를 위한 Global Save Guard Overlay */}
+          {isGlobalSaving && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/10 backdrop-blur-[2px] transition-all duration-300">
+              <div className="bg-white/95 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-200">
+                <div className="w-6 h-6 border-[3px] border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm font-bold text-slate-700 tracking-tight">안전하게 저장 중입니다...</span>
+              </div>
+            </div>
+          )}
+
           {viewState === 'DASHBOARD' && (
             <>
               <Dashboard

@@ -244,34 +244,27 @@ export default function IssueForm({
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="w-full sm:w-[25%] shrink-0">
                 <label className={lc}>IP Block</label>
-                {/* [27B 감리] 'All' 차단: IP는 실제 선언된 IP 목록에서만 선택 가능 */}
-                {currentSelectedIp === 'All' ? (
-                  <select
-                    value={formData.ipBlock || ''}
-                    onChange={(e) => {
-                      const newIp = e.target.value;
-                      // [보안] allowlist 검증: availableIps에 없는 값 차단
-                      if (!newIp || !(availableIps || []).includes(newIp)) return;
-                      const newNum = calcNextNum(newIp, latestIssueStates);
-                      const nextData = { ...formData, ipBlock: newIp, issueNum: newNum, subBlock: null };
-                      setFormData(nextData);
-                      if (onChange) onChange(nextData);
-                    }}
-                    disabled={isReadOnly}
-                    className={`w-full h-10 ${ic} font-bold text-blue-800 bg-blue-50 border-blue-200`}
-                  >
-                    <option value="">-- IP 선택 --</option>
-                    {(availableIps || []).filter(ip => ip !== 'All' && ip !== 'Deleted IP (Orphan)').map(ip => (
-                      <option key={ip} value={ip}>{ip}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="h-10 px-3 flex items-center bg-blue-50 border border-blue-200 rounded-md text-sm font-bold text-blue-800">
-                    {currentSelectedIp}
-                  </div>
-                )}
+                <select
+                  value={formData.ipBlock || ''}
+                  onChange={(e) => {
+                    const newIp = e.target.value;
+                    // [보안] allowlist 검증: availableIps에 없는 값 차단
+                    if (!newIp || !(availableIps || []).includes(newIp)) return;
+                    const newNum = calcNextNum(newIp, latestIssueStates);
+                    const nextData = { ...formData, ipBlock: newIp, issueNum: newNum, subBlock: null };
+                    setFormData(nextData);
+                    if (onChange) onChange(nextData);
+                  }}
+                  disabled={isReadOnly}
+                  className={`w-full h-10 ${ic} font-bold text-blue-800 bg-blue-50 border-blue-200`}
+                >
+                  <option value="">-- IP 선택 --</option>
+                  {(availableIps || []).filter(ip => ip !== 'All' && ip !== 'Deleted IP (Orphan)').map(ip => (
+                    <option key={ip} value={ip}>{ip}</option>
+                  ))}
+                </select>
               </div>
-              {ipIndexData && ipIndexData[currentSelectedIp] && ipIndexData[currentSelectedIp].Sub_Blocks && ipIndexData[currentSelectedIp].Sub_Blocks.length > 0 && (
+              {ipIndexData && formData.ipBlock && ipIndexData[formData.ipBlock] && ipIndexData[formData.ipBlock].Sub_Blocks && ipIndexData[formData.ipBlock].Sub_Blocks.length > 0 && (
                 <div className="w-full sm:w-[30%] shrink-0">
                   <label className={lc}>Sub-Block / Issue Level</label>
                   <select name="subBlock" value={formData.subBlock || ''} onChange={(e) => {
@@ -280,7 +273,7 @@ export default function IssueForm({
                     if (onChange) onChange(nextData);
                   }} className={`w-full ${ic}`} disabled={isReadOnly}>
                     <option value="">[Top-Level / System Overall]</option>
-                    {ipIndexData[currentSelectedIp].Sub_Blocks.map(sb => (
+                    {ipIndexData[formData.ipBlock].Sub_Blocks.map(sb => (
                       <option key={sb.id} value={sb.name}>{sb.name}</option>
                     ))}
                   </select>

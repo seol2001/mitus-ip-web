@@ -111,7 +111,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   // ── 명령형 API 노출 ──
   useImperativeHandle(ref, () => ({
     canNavigate: () => !isDirtyRef.current,
-    resetForm: () => baseResetForm(calcNextNum(ipDropdown, latestIssueStates))
+    resetForm: () => baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates))
   }), [ipDropdown, latestIssueStates, baseResetForm]);
 
   // ── 파생 상태 (Derived States) ──
@@ -307,7 +307,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     initialFormDataRef.current = null;
-    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+    baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
   }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm]);
 
 
@@ -383,7 +383,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     // [27B 감리] 편집 모드 유지 중에는 폼 초기화 생략 (데이터 손실 방지)
     // 편집 중이 아닐 때만 폼을 초기화하여 깨끗한 상태로 전환
     if (!isTabEditing) {
-      baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+      baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
       initialFormDataRef.current = null;
     }
 
@@ -393,18 +393,8 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
   const handleIpChange = useCallback(async (newIp) => {
     if (ipDropdown === newIp) return;
-    if (isTabEditing && isDirtyRef.current && !editingId) {
-      const confirmed = await showConfirm({
-        title: "작성 취소",
-        message: "IP를 변경하면 현재 작성 중인 내용이 초기화됩니다. 계속하시겠습니까?",
-        type: "warning"
-      });
-      if (!confirmed) return;
-    }
     setIpDropdown(newIp);
-    baseResetForm(calcNextNum(newIp, latestIssueStates));
-    initialFormDataRef.current = null;
-  }, [ipDropdown, editingId, showConfirm, latestIssueStates, isTabEditing, baseResetForm, setIpDropdown]);
+  }, [ipDropdown, setIpDropdown]);
 
   const handleDeleteRequest = useCallback(async (item) => {
     // [보안 가드] 삭제 작업도 executeSafe로 관리
@@ -446,7 +436,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
-    baseResetForm(calcNextNum(ipDropdown, latestIssueStates));
+    baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
   };
 
   return (

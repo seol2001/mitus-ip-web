@@ -57,10 +57,11 @@ export const useLogForm = (currentSelectedIp, onFormDirtyChange) => {
     if (onFormDirtyChange) onFormDirtyChange(newDirty);
   }, [editingId, onFormDirtyChange]);
 
-  const resetForm = useCallback((nextNum = null) => {
+  const resetForm = useCallback((targetIp, nextNum = null) => {
     setEditingId(null);
     setSelectedFaForPull(null);
-    setFormData(makeDefaultForm(currentSelectedIp, nextNum));
+    const effectiveIp = targetIp !== undefined ? targetIp : currentSelectedIp;
+    setFormData(makeDefaultForm(effectiveIp, nextNum));
     setIsDirty(false);
     if (onFormDirtyChange) onFormDirtyChange(false);
     setFormResetKey(prev => prev + 1);
