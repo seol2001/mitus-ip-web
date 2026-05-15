@@ -6,6 +6,7 @@ import { useProjectLock } from './hooks/useProjectLock';
 import { useNavigationGuard } from './hooks/useNavigationGuard';
 import { deriveNextRevisionData } from './utils/projectLogic';
 import { canUpdateProject } from './utils/securityUtils';
+import { ProjectSchema } from './schemas/projectSchema';
 import Dashboard from './components/Dashboard';
 import WorkspaceView from './components/WorkspaceView';
 import NewProjectModal from './components/NewProjectModal';
@@ -908,12 +909,18 @@ function App() {
         try {
           const content = JSON.parse(e.target.result);
 
-          // 기본 유효성 검사
-          if (content.app !== "Mitus-IP-Web" || !content.project || !content.project.id) {
-            throw new Error("유효한 Mitus-IP-Web 프로젝트 파일이 아닙니다.");
+          // [Zod Hardening & Auto-Healing]
+          const parseResult = ProjectSchema.safeParse(content);
+          
+          if (!parseResult.success) {
+            console.error("Schema validation failed critically:", parseResult.error);
+            throw new Error("파일 구조가 심각하게 훼손되어 복구할 수 없습니다.");
           }
 
-          const incomingProject = content.project;
+          // 정제되고 치유된(Sub_Blocks 빈 배열 등) 안전한 데이터 획득
+          const safeContent = parseResult.data;
+          const incomingProject = safeContent.project;
+
           const existingProject = projectsList.find(p => p.id === incomingProject.id);
 
           // 모달 오픈 (사용자에게 옵션 선택 받기)

@@ -35,6 +35,18 @@
 
 ## 📅 버전별 수정 히스토리 (Revision Log)
 
+### [Ver 1.5.0] 🛡️ 완료: Unit D - Stability & Security Hardening (Final)
+
+- **Zod Hardening & Auto-Healing (최종 방어선 구축)**:
+    - `Zod` 라이브러리를 이용한 런타임 프로젝트 데이터 스키마 검증 시스템 도입.
+    - 데이터 구조 파손(ex. `Sub_Blocks` 누락) 시 안전한 기본값으로 자동 치환하는 **Auto-Healing** 로직 구현.
+    - 부적절한 데이터 유입으로 인한 애플리케이션 크래시(화이트스크린) 원천 차단.
+- **아키텍처 현대화 완료**:
+    - `RevisionLogTab` 모놀리식 코드 해체 및 도메인별 커스텀 훅(`useLogData`, `useLogForm`, `useLogFilter` 등) 분리 완료.
+    - `react-window` 기반 리스트 가상화 적용으로 대용량 데이터 렌더링 성능 확보.
+- **UX 고도화**:
+    - 전역 필터와 이슈 폼의 독립적 상태 관리(The Draft-View Separation)로 비파괴적 탐색 환경 제공.
+
 ### [Ver 1.4.4] 🚀 신규: Unit D Step 5 - UX 최적화 및 폼-필터 독립화
 
 - **The Draft-View Separation (초안-뷰 분리) 구현**:
