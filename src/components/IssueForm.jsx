@@ -273,9 +273,14 @@ export default function IssueForm({
                     if (onChange) onChange(nextData);
                   }} className={`w-full ${ic}`} disabled={isReadOnly}>
                     <option value="">[Top-Level / System Overall]</option>
-                    {ipIndexData[formData.ipBlock].Sub_Blocks.map(sb => (
-                      <option key={sb.id} value={sb.name}>{sb.name}</option>
-                    ))}
+                    {ipIndexData[formData.ipBlock].Sub_Blocks.map((sb, idx) => {
+                      const isObj = typeof sb === 'object' && sb !== null;
+                      const val = isObj ? sb.name : sb;
+                      const key = isObj ? (sb.id || `sb-${idx}`) : `sb-${idx}`;
+                      return (
+                        <option key={key} value={val}>{val}</option>
+                      );
+                    })}
                   </select>
                 </div>
               )}

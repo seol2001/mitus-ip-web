@@ -385,7 +385,14 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
                       {/* Sub-Block Name: 콤팩트한 상단 헤더 */}
                       <div className="pr-8">
                         <label className={subLabelClass}>Sub-Block Name (Title)</label>
-                        <input type="text" value={sb.name} onChange={(e) => handleSubBlockChange(sb.id, 'name', e.target.value)} placeholder="e.g. Gate_Driver" className={subInputClass + " font-extrabold text-slate-800 bg-slate-50/50"} disabled={isOverviewDisabled} />
+                        <input 
+                          type="text" 
+                          value={typeof sb === 'object' ? (sb.name || '') : sb} 
+                          onChange={(e) => handleSubBlockChange(sb.id, 'name', e.target.value)} 
+                          placeholder="e.g. Gate_Driver" 
+                          className={subInputClass + " font-extrabold text-slate-800 bg-slate-50/50"} 
+                          disabled={isOverviewDisabled} 
+                        />
                       </div>
 
                       {/* Lineage Info: 상위 섹션과 동일하게 세로로 한 칸씩 배치 */}
