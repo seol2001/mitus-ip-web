@@ -100,6 +100,36 @@ function App() {
   const [importModalData, setImportModalData] = useState(null); // { project, existingProject }
   const [manageModalData, setManageModalData] = useState(null); // { mode, project }
 
+  // ─── [V1.5.3] 프로젝트 접근 기록 (최근 방문/자주 방문 정렬용) ───
+  const [accessLog, setAccessLog] = useState(() => {
+    try {
+      const key = `mitus_access_log_${currentUser?.id || 'guest'}`;
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const trackAccess = useCallback((projectId) => {
+    setAccessLog(prev => {
+      const current = prev[projectId] || { count: 0, lastAccessed: 0 };
+      return {
+        ...prev,
+        [projectId]: {
+          count: current.count + 1,
+          lastAccessed: Date.now()
+        }
+      };
+    });
+  }, [currentUser]);
+
+  // accessLog가 변경될 때마다 localStorage에 저장 (V1.5.3)
+  useEffect(() => {
+    const key = `mitus_access_log_${currentUser?.id || 'guest'}`;
+    localStorage.setItem(key, JSON.stringify(accessLog));
+  }, [accessLog, currentUser]);
+
 
   // ─── [Supabase] 프로젝트 목록 로드 함수 ───
   async function fetchProjects() {
@@ -721,6 +751,9 @@ function App() {
   const openWorkspace = async (projectId, phase, targetTab = 'Project_Overview', targetIp = null, mode = null, force = false) => {
     const proj = projectsList.find(p => p.id === projectId);
     if (!proj) return;
+
+    // [V1.5.3] 접근 기록 트래킹
+    trackAccess(projectId);
 
     if (isDemoMode) {
       console.log('🚀 [Demo Mode] Local 데이터를 사용하여 워크스페이스를 엽니다.');
@@ -1771,6 +1804,7 @@ function App() {
                 handleAddCustomIp={handleAddCustomIp}
                 handleExportProject={handleExportProject}
                 onManageProject={(mode, project) => setManageModalData({ mode, project })}
+                accessLog={accessLog}
               />
               {isNewProjectModalOpen && (
                 <NewProjectModal

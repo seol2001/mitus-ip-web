@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useConfirm } from '../contexts/ConfirmContext';
 
 // 하위 컴포넌트 임포트
@@ -17,12 +17,31 @@ export default function Dashboard({
   handleToggleArchive, handlePermanentDelete, handleResetReference, handleForceUnlock, 
   globalIpDictionary, customIpDictionary, customIpDetails, 
   handleEditCustomIp, handleDeleteCustomIp, handleAddCustomIp, 
-  handleExportProject, onManageProject 
+  handleExportProject, onManageProject, accessLog = {}
 }) {
   const { currentUser } = useAuth();
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [openSettingsId, setOpenSettingsId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  
+  // [V1.5.3] 사용자별 정렬 순서 설정 (localStorage 연동)
+  const [sortOrder, setSortOrder] = useState(() => {
+    try {
+      const storageKey = `mitus_sort_order_${currentUser?.id || 'guest'}`;
+      return localStorage.getItem(storageKey) || 'recently_accessed';
+    } catch (e) {
+      return 'recently_accessed';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const storageKey = `mitus_sort_order_${currentUser?.id || 'guest'}`;
+      localStorage.setItem(storageKey, sortOrder);
+    } catch (e) {
+      console.error('Failed to save sort order to localStorage:', e);
+    }
+  }, [sortOrder, currentUser]);
   const showConfirm = useConfirm();
   const fileInputRef = useRef(null);
 
@@ -153,7 +172,26 @@ export default function Dashboard({
   // 잠금 강제 해제 모달 상태
   const [unlockModalProj, setUnlockModalProj] = useState(null);
 
-  const filteredProjects = projects.filter(p => showArchived || !p.is_archived);
+  const sortedProjects = useMemo(() => {
+    const filtered = projects.filter(p => showArchived || !p.is_archived);
+    
+    return [...filtered].sort((a, b) => {
+      switch (sortOrder) {
+        case 'updated_desc':
+          return new Date(b.updated || 0) - new Date(a.updated || 0);
+        case 'name_asc':
+          return (a.name || '').localeCompare(b.name || '');
+        case 'name_desc':
+          return (b.name || '').localeCompare(a.name || '');
+        case 'recently_accessed':
+          return (accessLog[b.id]?.lastAccessed || 0) - (accessLog[a.id]?.lastAccessed || 0);
+        case 'most_accessed':
+          return (accessLog[b.id]?.count || 0) - (accessLog[a.id]?.count || 0);
+        default:
+          return 0;
+      }
+    });
+  }, [projects, showArchived, sortOrder, accessLog]);
 
   // 잠금 상태 분석 헬퍼
   // --- Sub-Block Catalog 추출 로직 ---
@@ -237,11 +275,13 @@ export default function Dashboard({
         isDbConnected={isDbConnected}
         showArchived={showArchived}
         onShowArchivedChange={setShowArchived}
+        sortOrder={sortOrder}
+        onSortOrderChange={setSortOrder}
       />
 
       {/* 3. 프로젝트 카드 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProjects.map(proj => (
+        {sortedProjects.map(proj => (
           <ProjectCard 
             key={proj.id}
             project={proj}
@@ -262,7 +302,7 @@ export default function Dashboard({
           />
         ))}
 
-        {filteredProjects.length === 0 && (
+        {sortedProjects.length === 0 && (
           <div className="col-span-full py-12 text-center text-slate-400">
             <p>표시할 프로젝트가 없습니다. 'New Project'를 클릭하여 시작하세요.</p>
           </div>
