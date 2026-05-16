@@ -4,8 +4,8 @@ import { z } from 'zod';
 const IpBlockSchema = z.object({
   IP_Name: z.string().default("Unknown").catch("Unknown"),
   IP_Status: z.string().default("Active").catch("Active"),
-  // Auto-Healing: 문자열 배열 혹은 객체 배열 모두 수용 가능하도록 유연화
-  Sub_Blocks: z.array(z.union([z.string(), z.record(z.any())])).default([]).catch([])
+  // 디버깅을 위해 일시적으로 단순화
+  Sub_Blocks: z.array(z.any()).default([]).catch([])
 }).passthrough(); // 미래에 추가될 수 있는 다른 필드들은 통과시킴
 
 // 2. Revision 스키마

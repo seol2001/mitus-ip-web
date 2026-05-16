@@ -1489,29 +1489,32 @@ function App() {
         locked_at: null
       };
 
-      // ─── [신규] Deep Replace 로직 (신규 프로젝트 시 내부 ID/이름 치환) ───
+      // ─── [V1.4.5] 강력한 Deep Replace 로직 (ID 정합성 자가 치유) ───
+      const targetId = mode === 'new' ? newId : incoming.id;
+      const targetName = mode === 'new' ? newName : (incoming.name || incoming.id);
+
+      const oldId = incoming.id;
+      const oldName = incoming.name || incoming.id;
+
+      let jsonStr = JSON.stringify(projectToSave);
+
+      // 1. ID 치환 (standalone 및 embedded 패턴 모두 대응)
+      if (oldId !== targetId) {
+        // "SM5720" -> "SM5720_MOCK" (필드 값)
+        jsonStr = jsonStr.split(`"${oldId}"`).join(`"${targetId}"`);
+        // .SM5720. -> .SM5720_MOCK. (이슈 ID 중간값: Buck.SM5720.ISSUE#1 대응)
+        jsonStr = jsonStr.split(`.${oldId}.`).join(`.${targetId}.`);
+      }
+
+      // 2. 이름 치환
+      if (oldName !== targetName) {
+        jsonStr = jsonStr.split(`"${oldName}"`).join(`"${targetName}"`);
+        jsonStr = jsonStr.split(`: "${oldName}"`).join(`: "${targetName}"`);
+      }
+
+      projectToSave = JSON.parse(jsonStr);
+
       if (mode === 'new') {
-        const oldId = incoming.id;
-        const oldName = incoming.name || incoming.id;
-
-        // JSON 문자열 치환 방식으로 가장 확실하게 전체 교체
-        let jsonStr = JSON.stringify(projectToSave);
-
-        // ID 치환 (전체 일치하는 경우만 바꾸는 게 좋지만, 여기서는 범용적으로 처리)
-        // 주의: 너무 짧은 ID는 위험할 수 있으나 프로젝트 ID 특성상 보통 고유함
-        if (oldId !== newId) {
-          jsonStr = jsonStr.split(`"${oldId}"`).join(`"${newId}"`);
-        }
-        // 이름 치환
-        if (oldName !== newName) {
-          jsonStr = jsonStr.split(`"${oldName}"`).join(`"${newName}"`);
-          // Overview 내부의 Project_Name 등 객체 값들도 치환 (따옴표 없는 경우 대응)
-          jsonStr = jsonStr.split(`: "${oldName}"`).join(`: "${newName}"`);
-        }
-
-        projectToSave = JSON.parse(jsonStr);
-
-        // 상위 레벨 최종 확정
         projectToSave.id = newId;
         projectToSave.name = newName;
       }

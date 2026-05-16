@@ -1,0 +1,1875 @@
+{
+    "app": "Mitus-IP-Web",
+    "version": "1.0",
+    "export_at": "2026-05-16T18:00:00.000Z",
+    "exported_by": "System_Architect_PM",
+    "project": {
+        "id": "SM5720_MOCK",
+        "name": "SM5720_MOCK",
+        "phases": [
+            "EVT0",
+            "EVT1",
+            "EVT2",
+            "EVT3",
+            "EVT4",
+            "EVT5"
+        ],
+        "latest_evt": "EVT5",
+        "is_archived": false,
+        "project_data": {
+            "version": 100,
+            "projectId": "SM5720_MOCK",
+            "revisions": {
+                "EVT0": {
+                    "status": "archived",
+                    "ipIndex": {
+                        "Buck": {
+                            "IP_Name": "Buck",
+                            "IP_Status": "Active"
+                        },
+                        "Type-C": {
+                            "IP_Name": "Type-C",
+                            "IP_Status": "Active"
+                        },
+                        "Boost": {
+                            "IP_Name": "Boost",
+                            "IP_Status": "Active"
+                        },
+                        "LDO": {
+                            "IP_Name": "LDO",
+                            "IP_Status": "Active"
+                        },
+                        "Buck-Boost": {
+                            "IP_Name": "Buck-Boost",
+                            "IP_Status": "Active"
+                        }
+                    },
+                    "revisionLog": {
+                        "initialMode": "new",
+                        "loadedIssues": [],
+                        "historyBlocks": [],
+                        "issues": [
+                            {
+                                "id": 101,
+                                "ipBlock": "Buck",
+                                "subBlock": "Current_Sensor",
+                                "issueNum": "ISSUE#1",
+                                "entryMode": "new",
+                                "severity": "Major",
+                                "disposition": "SW Workaround",
+                                "assignee": "박OO",
+                                "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                "verificationGap": "Verification Plan Omission",
+                                "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                "stage": "EVT0"
+                            },
+                            {
+                                "id": 102,
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "issueNum": "ISSUE#1",
+                                "entryMode": "new",
+                                "severity": "Major",
+                                "disposition": "SW Workaround",
+                                "assignee": "최OO",
+                                "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                "stage": "EVT0"
+                            },
+                            {
+                                "id": 103,
+                                "ipBlock": "Boost",
+                                "subBlock": "Error_Amp_Type3",
+                                "issueNum": "ISSUE#1",
+                                "entryMode": "new",
+                                "severity": "Major",
+                                "disposition": "Test Screening",
+                                "assignee": "정OO",
+                                "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                "verificationGap": "Model/PDK Mismatch",
+                                "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                "stage": "EVT0"
+                            },
+                            {
+                                "id": 104,
+                                "ipBlock": "LDO",
+                                "subBlock": "Bandgap_Ref",
+                                "issueNum": "ISSUE#1",
+                                "entryMode": "new",
+                                "severity": "Marginal",
+                                "disposition": "Test Screening",
+                                "assignee": "강OO",
+                                "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                "verificationGap": "Model/PDK Mismatch",
+                                "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                "stage": "EVT0"
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Project_Name": "SM5720_MOCK",
+                        "Process": "SSF BCD1340HP",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                },
+                "EVT1": {
+                    "status": "archived",
+                    "revisionLog": {
+                        "initialMode": "eval",
+                        "loadedIssues": [
+                            "Buck.SM5720_MOCK.ISSUE#1",
+                            "LDO.SM5720_MOCK.ISSUE#1",
+                            "Type-C.SM5720_MOCK.ISSUE#1",
+                            "Boost.SM5720_MOCK.ISSUE#1"
+                        ],
+                        "issues": [
+                            {
+                                "id": 1101,
+                                "entryMode": "eval",
+                                "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Buck",
+                                "subBlock": "Current_Sensor",
+                                "severity": "Major",
+                                "assessment": "Deferred",
+                                "comment": "Sense 저항 기생 성분 재추출을 통한 전면 구조 개선을 위해 메탈 레이아웃 변경 시점을 차기 차수로 연기함",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT1"
+                            },
+                            {
+                                "id": 1102,
+                                "entryMode": "carryover",
+                                "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "LDO",
+                                "subBlock": "Bandgap_Ref",
+                                "severity": "Marginal",
+                                "phenomenon": "선행 차수 유출 결함 방지를 위해 BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                "disposition": "Test Screening",
+                                "stage": "EVT1"
+                            },
+                            {
+                                "id": 1103,
+                                "entryMode": "carryover",
+                                "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "severity": "Major",
+                                "phenomenon": "CC 핀 대기 누설 전류 규격 미달 건에 대해 소프트웨어 ATE 선별 조치 플랜을 그대로 유지한 채 이월",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "메탈 마스크 변경 스케줄 제약으로 인해 회로 수정을 수행하지 못하고 후속 단계로 인계함",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT1"
+                            },
+                            {
+                                "id": 1104,
+                                "entryMode": "carryover",
+                                "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Boost",
+                                "subBlock": "Error_Amp_Type3",
+                                "severity": "Minor",
+                                "phenomenon": "DCM 고주파 발진 결함에 대해 외부 소자 선별 조건을 유지한 채 다음 차수로 유전 조치함",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Simulation Limitation",
+                                "gapComment": "Full-chip 과도 응답 검증 시뮬레이션 서버 부하 지연으로 수정 마스크 입고 타이밍 확보 실패",
+                                "disposition": "Test Screening",
+                                "stage": "EVT1"
+                            },
+                            {
+                                "id": 1105,
+                                "entryMode": "new",
+                                "ipBlock": "Buck",
+                                "subBlock": "OCP_Block",
+                                "issueNum": "ISSUE#2",
+                                "severity": "Major",
+                                "disposition": "Revision",
+                                "assignee": "박OO",
+                                "phenomenon": "풀로드 급변(Heavy load step) 과도 응답 검증 중 OCP 회로가 비정상적으로 조기 트리거(False trigger)됨",
+                                "rootCause": "OCP_Block 내 디지털 블랭킹 타임이 스위칭 동작 시 발생하는 인덕터 기생 링잉 지속 시간보다 짧게 타이밍 오류 설계됨",
+                                "verificationGap": "Simulation Limitation",
+                                "gapComment": "Full-chip top-level transient 시뮬레이션 인프라 구동 시간 제약으로 인해 블록 단축 파형 분석으로 대체하며 리플 결합 분석 놓침",
+                                "stage": "EVT1"
+                            },
+                            {
+                                "id": 1106,
+                                "entryMode": "new",
+                                "ipBlock": "Boost",
+                                "subBlock": "Boost_Driver",
+                                "issueNum": "ISSUE#2",
+                                "severity": "Major",
+                                "disposition": "Revision",
+                                "assignee": "정OO",
+                                "phenomenon": "풀부하 연속 구동 상황에서 High-side 파워 FET의 스위칭 손실 급증 및 효율 4% 미달 발생",
+                                "rootCause": "Boost_Driver 내부 레벨 시프터(Level shifter)의 턴온 지연 및 Rise/Fall 타임 비대칭에 따른 크로스 컨덕션 가중",
+                                "verificationGap": "Simulation Limitation",
+                                "gapComment": "고온/풀로드 연동 환경에서의 레이아웃 기생 성분(PEXT) 추출 후 컴포넌트 시뮬레이션 병목으로 정밀 타임 딜레이 검증 한계 발생",
+                                "stage": "EVT1"
+                            }
+                        ],
+                        "historyBlocks": [
+                            {
+                                "stageName": "EVT0",
+                                "issues": [
+                                    {
+                                        "id": 101,
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "박OO",
+                                        "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                        "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 102,
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "최OO",
+                                        "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                        "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 103,
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "Test Screening",
+                                        "assignee": "정OO",
+                                        "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                        "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 104,
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Marginal",
+                                        "disposition": "Test Screening",
+                                        "assignee": "강OO",
+                                        "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                        "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                        "stage": "EVT0"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Project_Name": "SM5720_MOCK",
+                        "Process": "SSF BCD1340HP",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                },
+                "EVT2": {
+                    "status": "archived",
+                    "revisionLog": {
+                        "initialMode": "eval",
+                        "loadedIssues": [
+                            "Buck.SM5720_MOCK.ISSUE#2",
+                            "Boost.SM5720_MOCK.ISSUE#2",
+                            "Boost.SM5720_MOCK.ISSUE#1",
+                            "Buck.SM5720_MOCK.ISSUE#1",
+                            "LDO.SM5720_MOCK.ISSUE#1",
+                            "Type-C.SM5720_MOCK.ISSUE#1"
+                        ],
+                        "issues": [
+                            {
+                                "id": 1201,
+                                "entryMode": "eval",
+                                "targetIssue": "Buck.SM5720_MOCK.ISSUE#2",
+                                "issueNum": "ISSUE#2",
+                                "ipBlock": "Buck",
+                                "subBlock": "OCP_Block",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "디지털 블랭킹 타임의 가변 레지스터 범위를 1us로 확장 적용하여 스위칭 링잉 노이즈 간섭 제거 및 오동작 제로 달성 확인",
+                                "disposition": "Acceptable",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1202,
+                                "entryMode": "eval",
+                                "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                "issueNum": "ISSUE#2",
+                                "ipBlock": "Boost",
+                                "subBlock": "Boost_Driver",
+                                "severity": "Major",
+                                "assessment": "Partial",
+                                "comment": "레벨 시프터 바이어스 최적화로 스위칭 오차를 개선했으나 고온 마진 안정화를 위해 소프트웨어 튜닝 레지스터 코드를 최종 강제 병합 조치",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1203,
+                                "entryMode": "eval",
+                                "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Boost",
+                                "subBlock": "Error_Amp_Type3",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "보상 회로 내부 Zero 위치 배치 구조 레이아웃 완전 대칭 수정을 통해 공정 편차 전 영역에서 고주파 발진 현상 완벽 제거 완료",
+                                "disposition": "Acceptable",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1204,
+                                "entryMode": "carryover",
+                                "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Buck",
+                                "subBlock": "Current_Sensor",
+                                "severity": "Major",
+                                "phenomenon": "Telemetry 오차 조치를 위한 센싱 저항 패턴 변경 메탈 마스크 일정을 마스크 제작 효율화를 위해 차기 차수(EVT3)로 병합 유예",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Etc.",
+                                "gapComment": "개발 비용 및 마스크 셋 결합 조건 최적화를 위한 아키텍트 마일스톤 유전 조치",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1205,
+                                "entryMode": "carryover",
+                                "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "LDO",
+                                "subBlock": "Bandgap_Ref",
+                                "severity": "Marginal",
+                                "phenomenon": "BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                "disposition": "Test Screening",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1206,
+                                "entryMode": "carryover",
+                                "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "severity": "Minor",
+                                "phenomenon": "CC 핀 대기 누설 전류 스펙 침범 조치를 출하 단계 선별 검사 사양으로 계속 유지 관리",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "양산 마스크 리드타임 제약에 따른 임시 선별 펌웨어 정책 고수",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1207,
+                                "entryMode": "new",
+                                "ipBlock": "Buck-Boost",
+                                "subBlock": "H_Bridge_Driver",
+                                "issueNum": "ISSUE#1",
+                                "severity": "Major",
+                                "disposition": "Revision",
+                                "assignee": "윤OO",
+                                "phenomenon": "Buck-Boost 전환(Transition) 구간 동작 시 데드타임 제어 오차로 인해 파워 FET 소자 파괴 위험 범위 관찰",
+                                "rootCause": "H_Bridge_Driver 내부 레벨 시프터 경로 간 딜레이 스큐(Skew) 편차 발생",
+                                "verificationGap": "Spec Ambiguity",
+                                "gapComment": "모체 플랫폼 규격서 내 비동기 천이 제어 로직 타이밍 사양 명세 기술이 모호하여 로직 합성 마진 오판 버그 유발",
+                                "stage": "EVT2"
+                            },
+                            {
+                                "id": 1208,
+                                "entryMode": "new",
+                                "ipBlock": "Fuel_Gauge",
+                                "subBlock": "ADC_Core",
+                                "issueNum": "ISSUE#1",
+                                "severity": "Major",
+                                "disposition": "Revision",
+                                "assignee": "이OO",
+                                "phenomenon": "영하 10도 이하 저온 환경 동작 시 배터리 SoC 잔량이 순간적으로 10% 이상 도약하는 SoC Jump 현상 발견",
+                                "rootCause": "ADC_Core 내부 입력 버퍼 임피던스가 저온 환경에서 미스매치되어 전압 센싱 레벨 왜곡 발생",
+                                "verificationGap": "Verification Plan Omission",
+                                "gapComment": "저온 가혹 환경에서의 다이내믹 로드 커플링 조건 연동 SPICE 시뮬레이션 항목이 테스트 플랜 수립 시 누락됨",
+                                "stage": "EVT2"
+                            }
+                        ],
+                        "historyBlocks": [
+                            {
+                                "stageName": "EVT0",
+                                "issues": [
+                                    {
+                                        "id": 101,
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "박OO",
+                                        "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                        "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 102,
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "최OO",
+                                        "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                        "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 103,
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "Test Screening",
+                                        "assignee": "정OO",
+                                        "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                        "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 104,
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Marginal",
+                                        "disposition": "Test Screening",
+                                        "assignee": "강OO",
+                                        "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                        "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                        "stage": "EVT0"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT1",
+                                "issues": [
+                                    {
+                                        "id": 1101,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Deferred",
+                                        "comment": "Sense 저항 기생 성분 재추출을 통한 전면 구조 개선을 위해 메탈 레이아웃 변경 시점을 차기 차수로 연기함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1102,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "선행 차수 유출 결함 방지를 위해 BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1103,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Major",
+                                        "phenomenon": "CC 핀 대기 누설 전류 규격 미달 건에 대해 소프트웨어 ATE 선별 조치 플랜을 그대로 유지한 채 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "메탈 마스크 변경 스케줄 제약으로 인해 회로 수정을 수행하지 못하고 후속 단계로 인계함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1104,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Minor",
+                                        "phenomenon": "DCM 고주파 발진 결함에 대해 외부 소자 선별 조건을 유지한 채 다음 차수로 유전 조치함",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip 과도 응답 검증 시뮬레이션 서버 부하 지연으로 수정 마스크 입고 타이밍 확보 실패",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1105,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "박OO",
+                                        "phenomenon": "풀로드 급변(Heavy load step) 과도 응답 검증 중 OCP 회로가 비정상적으로 조기 트리거(False trigger)됨",
+                                        "rootCause": "OCP_Block 내 디지털 블랭킹 타임이 스위칭 동작 시 발생하는 인덕터 기생 링잉 지속 시간보다 짧게 타이밍 오류 설계됨",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip top-level transient 시뮬레이션 인프라 구동 시간 제약으로 인해 블록 단축 파형 분석으로 대체하며 리플 결합 분석 놓침",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1106,
+                                        "entryMode": "new",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "정OO",
+                                        "phenomenon": "풀부하 연속 구동 상황에서 High-side 파워 FET의 스위칭 손실 급증 및 효율 4% 미달 발생",
+                                        "rootCause": "Boost_Driver 내부 레벨 시프터(Level shifter)의 턴온 지연 및 Rise/Fall 타임 비대칭에 따른 크로스 컨덕션 가중",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "고온/풀로드 연동 환경에서의 레이아웃 기생 성분(PEXT) 추출 후 컴포넌트 시뮬레이션 병목으로 정밀 타임 딜레이 검증 한계 발생",
+                                        "stage": "EVT1"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Project_Name": "SM5720_MOCK",
+                        "Process": "SSF BCD1340HP",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                },
+                "EVT3": {
+                    "status": "archived",
+                    "revisionLog": {
+                        "initialMode": "eval",
+                        "loadedIssues": [
+                            "Buck-Boost.SM5720_MOCK.ISSUE#1",
+                            "Fuel_Gauge.SM5720_MOCK.ISSUE#1",
+                            "Buck.SM5720_MOCK.ISSUE#1",
+                            "LDO.SM5720_MOCK.ISSUE#1",
+                            "Type-C.SM5720_MOCK.ISSUE#1",
+                            "Boost.SM5720_MOCK.ISSUE#2"
+                        ],
+                        "issues": [
+                            {
+                                "id": 1301,
+                                "entryMode": "eval",
+                                "targetIssue": "Buck-Boost.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Buck-Boost",
+                                "subBlock": "H_Bridge_Driver",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "Level Shifter 스큐 보정 회로 삽입 및 디지털 데드타임 락 아웃 로직 메탈 수정 반영으로 파괴 위험 요소 완벽 차단 확인",
+                                "disposition": "Acceptable",
+                                "stage": "EVT3"
+                            },
+                            {
+                                "id": 1302,
+                                "entryMode": "eval",
+                                "targetIssue": "Fuel_Gauge.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Fuel_Gauge",
+                                "subBlock": "ADC_Core",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "저온 보상 바이어스 가산 패턴 적용 및 버퍼 임피던스 정합 패턴 최적화 수정을 통해 저온 잔량 튐 현상 제로화 달성",
+                                "disposition": "Acceptable",
+                                "stage": "EVT3"
+                            },
+                            {
+                                "id": 1303,
+                                "entryMode": "eval",
+                                "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Buck",
+                                "subBlock": "Current_Sensor",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "메탈 마스크 업데이트를 통해 센싱 저항 구조를 완전 대칭으로 전면 교정하여 Telemetry 보고 오차 2.5% 이내 진입 성공",
+                                "disposition": "Acceptable",
+                                "stage": "EVT3"
+                            },
+                            {
+                                "id": 1304,
+                                "entryMode": "eval",
+                                "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "LDO",
+                                "subBlock": "Bandgap_Ref",
+                                "severity": "Marginal",
+                                "assessment": "Fixed",
+                                "comment": "2차 곡률 보정 저항 트리밍 마스크 반전 설계 적용 및 보정 퓨즈 제어 결합을 통해 고온 열 드리프트 결함 완벽 청소",
+                                "disposition": "Acceptable",
+                                "stage": "EVT3"
+                            },
+                            {
+                                "id": 1305,
+                                "entryMode": "carryover",
+                                "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "severity": "Minor",
+                                "phenomenon": "CC 핀 누설 전류 스펙 아웃 건에 대해 ATE 출하 선별 시스템 이월 유전 상태 유지",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Etc.",
+                                "gapComment": "주요 핵심 전원 블록 메탈 픽스 및 마스크 락(Frozen) 진입에 따른 공정 스케줄 제약 감안",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT3"
+                            },
+                            {
+                                "id": 1306,
+                                "entryMode": "eval",
+                                "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                "issueNum": "ISSUE#2",
+                                "ipBlock": "Boost",
+                                "subBlock": "Boost_Driver",
+                                "severity": "Major",
+                                "assessment": "Fixed",
+                                "comment": "EVT2에서 우회 조치되었던 소프트웨어 최적화 트림 코드가 부팅 시퀀스 디바이스 매크로 스크립트에 정식 컴파일 반영되어, 고온 신뢰성 환경 하에서의 Jitter 왜곡 현상이 전 영역 완벽 개선됨을 확인",
+                                "disposition": "Acceptable",
+                                "stage": "EVT3"
+                            }
+                        ],
+                        "historyBlocks": [
+                            {
+                                "stageName": "EVT0",
+                                "issues": [
+                                    {
+                                        "id": 101,
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "박OO",
+                                        "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                        "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 102,
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "최OO",
+                                        "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                        "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 103,
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "Test Screening",
+                                        "assignee": "정OO",
+                                        "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                        "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 104,
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Marginal",
+                                        "disposition": "Test Screening",
+                                        "assignee": "강OO",
+                                        "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                        "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                        "stage": "EVT0"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT1",
+                                "issues": [
+                                    {
+                                        "id": 1101,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Deferred",
+                                        "comment": "Sense 저항 기생 성분 재추출을 통한 전면 구조 개선을 위해 메탈 레이아웃 변경 시점을 차기 차수로 연기함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1102,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "선행 차수 유출 결함 방지를 위해 BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1103,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Major",
+                                        "phenomenon": "CC 핀 대기 누설 전류 규격 미달 건에 대해 소프트웨어 ATE 선별 조치 플랜을 그대로 유지한 채 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "메탈 마스크 변경 스케줄 제약으로 인해 회로 수정을 수행하지 못하고 후속 단계로 인계함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1104,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Minor",
+                                        "phenomenon": "DCM 고주파 발진 결함에 대해 외부 소자 선별 조건을 유지한 채 다음 차수로 유전 조치함",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip 과도 응답 검증 시뮬레이션 서버 부하 지연으로 수정 마스크 입고 타이밍 확보 실패",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1105,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "박OO",
+                                        "phenomenon": "풀로드 급변(Heavy load step) 과도 응답 검증 중 OCP 회로가 비정상적으로 조기 트리거(False trigger)됨",
+                                        "rootCause": "OCP_Block 내 디지털 블랭킹 타임이 스위칭 동작 시 발생하는 인덕터 기생 링잉 지속 시간보다 짧게 타이밍 오류 설계됨",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip top-level transient 시뮬레이션 인프라 구동 시간 제약으로 인해 블록 단축 파형 분석으로 대체하며 리플 결합 분석 놓침",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1106,
+                                        "entryMode": "new",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "정OO",
+                                        "phenomenon": "풀부하 연속 구동 상황에서 High-side 파워 FET의 스위칭 손실 급증 및 효율 4% 미달 발생",
+                                        "rootCause": "Boost_Driver 내부 레벨 시프터(Level shifter)의 턴온 지연 및 Rise/Fall 타임 비대칭에 따른 크로스 컨덕션 가중",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "고온/풀로드 연동 환경에서의 레이아웃 기생 성분(PEXT) 추출 후 컴포넌트 시뮬레이션 병목으로 정밀 타임 딜레이 검증 한계 발생",
+                                        "stage": "EVT1"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT2",
+                                "issues": [
+                                    {
+                                        "id": 1201,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "디지털 블랭킹 타임의 가변 레지스터 범위를 1us로 확장 적용하여 스위칭 링잉 노이즈 간섭 제거 및 오동작 제로 달성 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1202,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Partial",
+                                        "comment": "레벨 시프터 바이어스 최적화로 스위칭 오차를 개선했으나 고온 마진 안정화를 위해 소프트웨어 튜닝 레지스터 코드를 최종 강제 병합 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1203,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "보상 회로 내부 Zero 위치 배치 구조 레이아웃 완전 대칭 수정을 통해 공정 편차 전 영역에서 고주파 발진 현상 완벽 제거 완료",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1204,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "phenomenon": "Telemetry 오차 조치를 위한 센싱 저항 패턴 변경 메탈 마스크 일정을 마스크 제작 효율화를 위해 차기 차수(EVT3)로 병합 유예",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "개발 비용 및 마스크 셋 결합 조건 최적화를 위한 아키텍트 마일스톤 유전 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1205,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1206,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 대기 누설 전류 스펙 침범 조치를 출하 단계 선별 검사 사양으로 계속 유지 관리",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "양산 마스크 리드타임 제약에 따른 임시 선별 펌웨어 정책 고수",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1207,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck-Boost",
+                                        "subBlock": "H_Bridge_Driver",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "윤OO",
+                                        "phenomenon": "Buck-Boost 전환(Transition) 구간 동작 시 데드타임 제어 오차로 인해 파워 FET 소자 파괴 위험 범위 관찰",
+                                        "rootCause": "H_Bridge_Driver 내부 레벨 시프터 경로 간 딜레이 스큐(Skew) 편차 발생",
+                                        "verificationGap": "Spec Ambiguity",
+                                        "gapComment": "모체 플랫폼 규격서 내 비동기 천이 제어 로직 타이밍 사양 명세 기술이 모호하여 로직 합성 마진 오판 버그 유발",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1208,
+                                        "entryMode": "new",
+                                        "ipBlock": "Fuel_Gauge",
+                                        "subBlock": "ADC_Core",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "이OO",
+                                        "phenomenon": "영하 10도 이하 저온 환경 동작 시 배터리 SoC 잔량이 순간적으로 10% 이상 도약하는 SoC Jump 현상 발견",
+                                        "rootCause": "ADC_Core 내부 입력 버퍼 임피던스가 저온 환경에서 미스매치되어 전압 센싱 레벨 왜곡 발생",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "저온 가혹 환경에서의 다이내믹 로드 커플링 조건 연동 SPICE 시뮬레이션 항목이 테스트 플랜 수립 시 누락됨",
+                                        "stage": "EVT2"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Project_Name": "SM5720_MOCK",
+                        "Process": "SSF BCD1340HP",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                },
+                "EVT4": {
+                    "status": "archived",
+                    "revisionLog": {
+                        "initialMode": "carryover",
+                        "loadedIssues": [
+                            "Type-C.SM5720_MOCK.ISSUE#1"
+                        ],
+                        "issues": [
+                            {
+                                "id": 1401,
+                                "entryMode": "carryover",
+                                "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "severity": "Minor",
+                                "phenomenon": "CC 핀 누설 전류 선별 알고리즘 신뢰성 확보 검증을 토대로 디바이스 동결 상태 인계",
+                                "carryoverAction": "Keep Open",
+                                "verificationGap": "Etc.",
+                                "gapComment": "수양산 신뢰성 장기HTOL 검증 단계 진입에 따른 추가 변동 요인 원천 배제",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT4"
+                            }
+                        ],
+                        "historyBlocks": [
+                            {
+                                "stageName": "EVT0",
+                                "issues": [
+                                    {
+                                        "id": 101,
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "박OO",
+                                        "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                        "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 102,
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "최OO",
+                                        "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                        "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 103,
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "Test Screening",
+                                        "assignee": "정OO",
+                                        "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                        "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 104,
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Marginal",
+                                        "disposition": "Test Screening",
+                                        "assignee": "강OO",
+                                        "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                        "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                        "stage": "EVT0"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT1",
+                                "issues": [
+                                    {
+                                        "id": 1101,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Deferred",
+                                        "comment": "Sense 저항 기생 성분 재추출을 통한 전면 구조 개선을 위해 메탈 레이아웃 변경 시점을 차기 차수로 연기함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1102,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "선행 차수 유출 결함 방지를 위해 BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1103,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Major",
+                                        "phenomenon": "CC 핀 대기 누설 전류 규격 미달 건에 대해 소프트웨어 ATE 선별 조치 플랜을 그대로 유지한 채 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "메탈 마스크 변경 스케줄 제약으로 인해 회로 수정을 수행하지 못하고 후속 단계로 인계함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1104,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Minor",
+                                        "phenomenon": "DCM 고주파 발진 결함에 대해 외부 소자 선별 조건을 유지한 채 다음 차수로 유전 조치함",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip 과도 응답 검증 시뮬레이션 서버 부하 지연으로 수정 마스크 입고 타이밍 확보 실패",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1105,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "박OO",
+                                        "phenomenon": "풀로드 급변(Heavy load step) 과도 응답 검증 중 OCP 회로가 비정상적으로 조기 트리거(False trigger)됨",
+                                        "rootCause": "OCP_Block 내 디지털 블랭킹 타임이 스위칭 동작 시 발생하는 인덕터 기생 링잉 지속 시간보다 짧게 타이밍 오류 설계됨",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip top-level transient 시뮬레이션 인프라 구동 시간 제약으로 인해 블록 단축 파형 분석으로 대체하며 리플 결합 분석 놓침",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1106,
+                                        "entryMode": "new",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "정OO",
+                                        "phenomenon": "풀부하 연속 구동 상황에서 High-side 파워 FET의 스위칭 손실 급증 및 효율 4% 미달 발생",
+                                        "rootCause": "Boost_Driver 내부 레벨 시프터(Level shifter)의 턴온 지연 및 Rise/Fall 타임 비대칭에 따른 크로스 컨덕션 가중",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "고온/풀로드 연동 환경에서의 레이아웃 기생 성분(PEXT) 추출 후 컴포넌트 시뮬레이션 병목으로 정밀 타임 딜레이 검증 한계 발생",
+                                        "stage": "EVT1"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT2",
+                                "issues": [
+                                    {
+                                        "id": 1201,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "디지털 블랭킹 타임의 가변 레지스터 범위를 1us로 확장 적용하여 스위칭 링잉 노이즈 간섭 제거 및 오동작 제로 달성 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1202,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Partial",
+                                        "comment": "레벨 시프터 바이어스 최적화로 스위칭 오차를 개선했으나 고온 마진 안정화를 위해 소프트웨어 튜닝 레지스터 코드를 최종 강제 병합 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1203,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "보상 회로 내부 Zero 위치 배치 구조 레이아웃 완전 대칭 수정을 통해 공정 편차 전 영역에서 고주파 발진 현상 완벽 제거 완료",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1204,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "phenomenon": "Telemetry 오차 조치를 위한 센싱 저항 패턴 변경 메탈 마스크 일정을 마스크 제작 효율화를 위해 차기 차수(EVT3)로 병합 유예",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "개발 비용 및 마스크 셋 결합 조건 최적화를 위한 아키텍트 마일스톤 유전 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1205,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1206,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 대기 누설 전류 스펙 침범 조치를 출하 단계 선별 검사 사양으로 계속 유지 관리",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "양산 마스크 리드타임 제약에 따른 임시 선별 펌웨어 정책 고수",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1207,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck-Boost",
+                                        "subBlock": "H_Bridge_Driver",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "윤OO",
+                                        "phenomenon": "Buck-Boost 전환(Transition) 구간 동작 시 데드타임 제어 오차로 인해 파워 FET 소자 파괴 위험 범위 관찰",
+                                        "rootCause": "H_Bridge_Driver 내부 레벨 시프터 경로 간 딜레이 스큐(Skew) 편차 발생",
+                                        "verificationGap": "Spec Ambiguity",
+                                        "gapComment": "모체 플랫폼 규격서 내 비동기 천이 제어 로직 타이밍 사양 명세 기술이 모호하여 로직 합성 마진 오판 버그 유발",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1208,
+                                        "entryMode": "new",
+                                        "ipBlock": "Fuel_Gauge",
+                                        "subBlock": "ADC_Core",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "이OO",
+                                        "phenomenon": "영하 10도 이하 저온 환경 동작 시 배터리 SoC 잔량이 순간적으로 10% 이상 도약하는 SoC Jump 현상 발견",
+                                        "rootCause": "ADC_Core 내부 입력 버퍼 임피던스가 저온 환경에서 미스매치되어 전압 센싱 레벨 왜곡 발생",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "저온 가혹 환경에서의 다이내믹 로드 커플링 조건 연동 SPICE 시뮬레이션 항목이 테스트 플랜 수립 시 누락됨",
+                                        "stage": "EVT2"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT3",
+                                "issues": [
+                                    {
+                                        "id": 1301,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck-Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck-Boost",
+                                        "subBlock": "H_Bridge_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "Level Shifter 스큐 보정 회로 삽입 및 디지털 데드타임 락 아웃 로직 메탈 수정 반영으로 파괴 위험 요소 완벽 차단 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1302,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Fuel_Gauge.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Fuel_Gauge",
+                                        "subBlock": "ADC_Core",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "저온 보상 바이어스 가산 패턴 적용 및 버퍼 임피던스 정합 패턴 최적화 수정을 통해 저온 잔량 튐 현상 제로화 달성",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1303,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "메탈 마스크 업데이트를 통해 센싱 저항 구조를 완전 대칭으로 전면 교정하여 Telemetry 보고 오차 2.5% 이내 진입 성공",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1304,
+                                        "entryMode": "eval",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "assessment": "Fixed",
+                                        "comment": "2차 곡률 보정 저항 트리밍 마스크 반전 설계 적용 및 보정 퓨즈 제어 결합을 통해 고온 열 드리프트 결함 완벽 청소",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1305,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 누설 전류 스펙 아웃 건에 대해 ATE 출하 선별 시스템 이월 유전 상태 유지",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "주요 핵심 전원 블록 메탈 픽스 및 마스크 락(Frozen) 진입에 따른 공정 스케줄 제약 감안",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1306,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "EVT2에서 우회 조치되었던 소프트웨어 최적화 트림 코드가 부팅 시퀀스 디바이스 매크로 스크립트에 정식 컴파일 반영되어, 고온 신뢰성 환경 하에서의 Jitter 왜곡 현상이 전 영역 완벽 개선됨을 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Project_Name": "SM5720_MOCK",
+                        "Process": "SSF BCD1340HP",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                },
+                "EVT5": {
+                    "status": "draft",
+                    "ipIndex": {
+                        "Buck": {
+                            "IP_Name": "Buck",
+                            "IP_Status": "Active"
+                        },
+                        "Fuel_Gauge": {
+                            "IP_Name": "Fuel_Gauge",
+                            "IP_Status": "Active"
+                        },
+                        "Type-C": {
+                            "IP_Name": "Type-C",
+                            "IP_Status": "Active"
+                        },
+                        "Boost": {
+                            "IP_Name": "Boost",
+                            "IP_Status": "Active"
+                        },
+                        "LDO": {
+                            "IP_Name": "LDO",
+                            "IP_Status": "Active"
+                        },
+                        "Buck-Boost": {
+                            "IP_Name": "Buck-Boost",
+                            "IP_Status": "Active"
+                        }
+                    },
+                    "revisionLog": {
+                        "initialMode": "eval",
+                        "loadedIssues": [
+                            "Type-C.SM5720_MOCK.ISSUE#1"
+                        ],
+                        "issues": [
+                            {
+                                "id": 2501,
+                                "entryMode": "reopen",
+                                "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                "issueNum": "ISSUE#1",
+                                "ipBlock": "Type-C",
+                                "subBlock": "CC_PHY",
+                                "severity": "Major",
+                                "previousStateSummary": "EVT0 차수 최초 검증 단계에서 누설 전류 결함 발견 후 메탈 마스크 일정을 이유로 선별 조치 처분(SW Workaround)을 장기간 유지해 왔음",
+                                "reopenReason": "최종 대량 수양산성 검증 단계 중 파운드리 Lot별 웨이퍼 공정 산포 변동으로 인해 선별 윈도우 마진이 붕괴되어 출하 테스트 수율(Yield drop)이 15% 이상 폭락하는 중대 양산 이슈 유발로 재오픈 처리",
+                                "verificationGap": "Review Miss (Human Error)",
+                                "gapComment": "EVT1~EVT4 단계 이월 감리 과정 중 Lot 간 공정 마진 편차 시뮬레이션 데이터를 유관 부서 간 크로스 서명 테이블에서 영구 누락하여 최종 양산 단계에서 유출됨",
+                                "disposition": "SW Workaround",
+                                "stage": "EVT5",
+                                "comment": "ISO-Trim 내 오프셋 미세 제어 레지스터 마이크로코드 보정 펌웨어를 최종 배포하여 마스크 수정 없이 수율을 100% 정상 복구 완료하고 최종 종결 확정"
+                            },
+                            {
+                                "id": 2502,
+                                "entryMode": "new",
+                                "ipBlock": "LDO",
+                                "subBlock": "Bandgap_Ref",
+                                "issueNum": "ISSUE#2",
+                                "severity": "Minor",
+                                "types": [
+                                    "Customer request"
+                                ],
+                                "phenomenon": "최종 세트 고객사 메인보드 사양 변경에 기인한 실시간 가변형 출력 전압 레퍼런스 제어 사양 추가 요청 유입",
+                                "rootCause": "양산 직전 최종 단말 아키텍처 스펙 변경 사항에 따른 시스템 보강 VOC 반영",
+                                "verificationGap": "Spec Ambiguity",
+                                "gapComment": "고객사 기술 사양 미팅록 내 가이드라인 및 인터페이스 마진 정의 명세가 모호하여 최종 승인 사양 검증 단계에서 레지스터 마일스톤 오판 유출",
+                                "disposition": "Acceptable",
+                                "stage": "EVT5"
+                            }
+                        ],
+                        "historyBlocks": [
+                            {
+                                "stageName": "EVT0",
+                                "issues": [
+                                    {
+                                        "id": 101,
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "박OO",
+                                        "phenomenon": "저부하(Light load) 영역에서 Iout telemetry 오차가 타겟 사양 대비 15% 이상 발생하여 전류 감지 정확도 저하",
+                                        "rootCause": "Current_Sensor 내 감지 저항(Sense resistor) 레이아웃 비대칭으로 인한 저전류 구간 기생 링잉 전압 강하 누적",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "초기 기동 시점의 배터리 단 transient 임피던스 변동에 따른 저전류 복합 코너 케이스가 검증 플랜 수립 단계에서 원천 누락됨",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 102,
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "SW Workaround",
+                                        "assignee": "최OO",
+                                        "phenomenon": "CC 핀의 대기 누설 전류(Leakage current)가 스펙(1uA)을 초과하여 대기 모드 전력 규격 미달",
+                                        "rootCause": "ESD 보호 다이오드 구조 설계 시 서브스레시홀드(Sub-threshold) 역방향 누설 전류 모델링 매칭 미흡",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "테스트 플랜에 대기 모드 누설 전류 검증 항목이 명시되어 있었으나, 칩 최외각 I/O 가드링 레이아웃 부검 과정에서 엔지니어 휴먼 에러로 검토 누락",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 103,
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Major",
+                                        "disposition": "Test Screening",
+                                        "assignee": "정OO",
+                                        "phenomenon": "경부하 DCM 모드 동작 시 출력 전압에서 150mV 진폭의 고주파 위상 발진(Oscillation) 현상 관찰",
+                                        "rootCause": "Type-3 보상 회로 내 Zero 배치 위치가 파운드리 공정 변동 마진에 의해 가청 주파수 고역 대역으로 밀려남",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리가 제공한 SPICE 소자의 몬테카를로 미스매치 모델 아키텍처와 실제 실리콘 반도체 소자 특성 간 기생 캡 오차 존재",
+                                        "stage": "EVT0"
+                                    },
+                                    {
+                                        "id": 104,
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "issueNum": "ISSUE#1",
+                                        "entryMode": "new",
+                                        "severity": "Marginal",
+                                        "disposition": "Test Screening",
+                                        "assignee": "강OO",
+                                        "phenomenon": "고온(125도) 신뢰성 환경 평가 시 BGR 레퍼런스 출력 전압의 비정상적인 열 드리프트 현상 발생",
+                                        "rootCause": "Bandgap_Ref 내부 온도 보상(PTAT/CTAT) 저항 네트워크의 2차 온도 계수 모델링 왜곡",
+                                        "verificationGap": "Model/PDK Mismatch",
+                                        "gapComment": "파운드리 BCD 공정 저항 소자의 고온 영역 특성 시뮬레이션 모델링 신뢰도 한계로 프리실리콘 결과 왜곡됨",
+                                        "stage": "EVT0"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT1",
+                                "issues": [
+                                    {
+                                        "id": 1101,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Deferred",
+                                        "comment": "Sense 저항 기생 성분 재추출을 통한 전면 구조 개선을 위해 메탈 레이아웃 변경 시점을 차기 차수로 연기함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1102,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "선행 차수 유출 결함 방지를 위해 BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1103,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Major",
+                                        "phenomenon": "CC 핀 대기 누설 전류 규격 미달 건에 대해 소프트웨어 ATE 선별 조치 플랜을 그대로 유지한 채 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "메탈 마스크 변경 스케줄 제약으로 인해 회로 수정을 수행하지 못하고 후속 단계로 인계함",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1104,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Minor",
+                                        "phenomenon": "DCM 고주파 발진 결함에 대해 외부 소자 선별 조건을 유지한 채 다음 차수로 유전 조치함",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip 과도 응답 검증 시뮬레이션 서버 부하 지연으로 수정 마스크 입고 타이밍 확보 실패",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1105,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "박OO",
+                                        "phenomenon": "풀로드 급변(Heavy load step) 과도 응답 검증 중 OCP 회로가 비정상적으로 조기 트리거(False trigger)됨",
+                                        "rootCause": "OCP_Block 내 디지털 블랭킹 타임이 스위칭 동작 시 발생하는 인덕터 기생 링잉 지속 시간보다 짧게 타이밍 오류 설계됨",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "Full-chip top-level transient 시뮬레이션 인프라 구동 시간 제약으로 인해 블록 단축 파형 분석으로 대체하며 리플 결합 분석 놓침",
+                                        "stage": "EVT1"
+                                    },
+                                    {
+                                        "id": 1106,
+                                        "entryMode": "new",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "issueNum": "ISSUE#2",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "정OO",
+                                        "phenomenon": "풀부하 연속 구동 상황에서 High-side 파워 FET의 스위칭 손실 급증 및 효율 4% 미달 발생",
+                                        "rootCause": "Boost_Driver 내부 레벨 시프터(Level shifter)의 턴온 지연 및 Rise/Fall 타임 비대칭에 따른 크로스 컨덕션 가중",
+                                        "verificationGap": "Simulation Limitation",
+                                        "gapComment": "고온/풀로드 연동 환경에서의 레이아웃 기생 성분(PEXT) 추출 후 컴포넌트 시뮬레이션 병목으로 정밀 타임 딜레이 검증 한계 발생",
+                                        "stage": "EVT1"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT2",
+                                "issues": [
+                                    {
+                                        "id": 1201,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "OCP_Block",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "디지털 블랭킹 타임의 가변 레지스터 범위를 1us로 확장 적용하여 스위칭 링잉 노이즈 간섭 제거 및 오동작 제로 달성 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1202,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Partial",
+                                        "comment": "레벨 시프터 바이어스 최적화로 스위칭 오차를 개선했으나 고온 마진 안정화를 위해 소프트웨어 튜닝 레지스터 코드를 최종 강제 병합 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1203,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Error_Amp_Type3",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "보상 회로 내부 Zero 위치 배치 구조 레이아웃 완전 대칭 수정을 통해 공정 편차 전 영역에서 고주파 발진 현상 완벽 제거 완료",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1204,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "phenomenon": "Telemetry 오차 조치를 위한 센싱 저항 패턴 변경 메탈 마스크 일정을 마스크 제작 효율화를 위해 차기 차수(EVT3)로 병합 유예",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "개발 비용 및 마스크 셋 결합 조건 최적화를 위한 아키텍트 마일스톤 유전 조치",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1205,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "phenomenon": "BGR 열 드리프트 개선용 트리밍 저항 네트워크 마스크 반전 공정 수정 일정을 후속 단계로 유지 이월",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "디지털 타이밍 버그 수정 우선순위 배치로 인해 수동 아날로그 마진 크로스 체크 누락 유출",
+                                        "disposition": "Test Screening",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1206,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 대기 누설 전류 스펙 침범 조치를 출하 단계 선별 검사 사양으로 계속 유지 관리",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Review Miss (Human Error)",
+                                        "gapComment": "양산 마스크 리드타임 제약에 따른 임시 선별 펌웨어 정책 고수",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1207,
+                                        "entryMode": "new",
+                                        "ipBlock": "Buck-Boost",
+                                        "subBlock": "H_Bridge_Driver",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "윤OO",
+                                        "phenomenon": "Buck-Boost 전환(Transition) 구간 동작 시 데드타임 제어 오차로 인해 파워 FET 소자 파괴 위험 범위 관찰",
+                                        "rootCause": "H_Bridge_Driver 내부 레벨 시프터 경로 간 딜레이 스큐(Skew) 편차 발생",
+                                        "verificationGap": "Spec Ambiguity",
+                                        "gapComment": "모체 플랫폼 규격서 내 비동기 천이 제어 로직 타이밍 사양 명세 기술이 모호하여 로직 합성 마진 오판 버그 유발",
+                                        "stage": "EVT2"
+                                    },
+                                    {
+                                        "id": 1208,
+                                        "entryMode": "new",
+                                        "ipBlock": "Fuel_Gauge",
+                                        "subBlock": "ADC_Core",
+                                        "issueNum": "ISSUE#1",
+                                        "severity": "Major",
+                                        "disposition": "Revision",
+                                        "assignee": "이OO",
+                                        "phenomenon": "영하 10도 이하 저온 환경 동작 시 배터리 SoC 잔량이 순간적으로 10% 이상 도약하는 SoC Jump 현상 발견",
+                                        "rootCause": "ADC_Core 내부 입력 버퍼 임피던스가 저온 환경에서 미스매치되어 전압 센싱 레벨 왜곡 발생",
+                                        "verificationGap": "Verification Plan Omission",
+                                        "gapComment": "저온 가혹 환경에서의 다이내믹 로드 커플링 조건 연동 SPICE 시뮬레이션 항목이 테스트 플랜 수립 시 누락됨",
+                                        "stage": "EVT2"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT3",
+                                "issues": [
+                                    {
+                                        "id": 1301,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck-Boost.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck-Boost",
+                                        "subBlock": "H_Bridge_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "Level Shifter 스큐 보정 회로 삽입 및 디지털 데드타임 락 아웃 로직 메탈 수정 반영으로 파괴 위험 요소 완벽 차단 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1302,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Fuel_Gauge.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Fuel_Gauge",
+                                        "subBlock": "ADC_Core",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "저온 보상 바이어스 가산 패턴 적용 및 버퍼 임피던스 정합 패턴 최적화 수정을 통해 저온 잔량 튐 현상 제로화 달성",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1303,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Buck.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Buck",
+                                        "subBlock": "Current_Sensor",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "메탈 마스크 업데이트를 통해 센싱 저항 구조를 완전 대칭으로 전면 교정하여 Telemetry 보고 오차 2.5% 이내 진입 성공",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1304,
+                                        "entryMode": "eval",
+                                        "targetIssue": "LDO.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "LDO",
+                                        "subBlock": "Bandgap_Ref",
+                                        "severity": "Marginal",
+                                        "assessment": "Fixed",
+                                        "comment": "2차 곡률 보정 저항 트리밍 마스크 반전 설계 적용 및 보정 퓨즈 제어 결합을 통해 고온 열 드리프트 결함 완벽 청소",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1305,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 누설 전류 스펙 아웃 건에 대해 ATE 출하 선별 시스템 이월 유전 상태 유지",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "주요 핵심 전원 블록 메탈 픽스 및 마스크 락(Frozen) 진입에 따른 공정 스케줄 제약 감안",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT3"
+                                    },
+                                    {
+                                        "id": 1306,
+                                        "entryMode": "eval",
+                                        "targetIssue": "Boost.SM5720_MOCK.ISSUE#2",
+                                        "issueNum": "ISSUE#2",
+                                        "ipBlock": "Boost",
+                                        "subBlock": "Boost_Driver",
+                                        "severity": "Major",
+                                        "assessment": "Fixed",
+                                        "comment": "EVT2에서 우회 조치되었던 소프트웨어 최적화 트림 코드가 부팅 시퀀스 디바이스 매크로 스크립트에 정식 컴파일 반영되어, 고온 신뢰성 환경 하에서의 Jitter 왜곡 현상이 전 영역 완벽 개선됨을 확인",
+                                        "disposition": "Acceptable",
+                                        "stage": "EVT3"
+                                    }
+                                ]
+                            },
+                            {
+                                "stageName": "EVT4",
+                                "issues": [
+                                    {
+                                        "id": 1401,
+                                        "entryMode": "carryover",
+                                        "targetIssue": "Type-C.SM5720_MOCK.ISSUE#1",
+                                        "issueNum": "ISSUE#1",
+                                        "ipBlock": "Type-C",
+                                        "subBlock": "CC_PHY",
+                                        "severity": "Minor",
+                                        "phenomenon": "CC 핀 누설 전류 선별 알고리즘 신뢰성 확보 검증을 토대로 디바이스 동결 상태 인계",
+                                        "carryoverAction": "Keep Open",
+                                        "verificationGap": "Etc.",
+                                        "gapComment": "수양산 신뢰성 장기HTOL 검증 단계 진입에 따른 추가 변동 요인 원천 배제",
+                                        "disposition": "SW Workaround",
+                                        "stage": "EVT4"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "projectOverview": {
+                        "Specs": {
+                            "Package": "WLCSP",
+                            "Chip_Area_Target": "12.5mm2",
+                            "Operating_Voltage": "3.0V - 16V"
+                        },
+                        "Foundry": "SSF",
+                        "Process": "BCD1340HP",
+                        "Project_Name": "SM5720_MOCK",
+                        "Customer_Name": "Samsung",
+                        "IP_Blocks": [
+                            "Buck",
+                            "Type-C",
+                            "Boost",
+                            "LDO",
+                            "Buck-Boost",
+                            "Fuel_Gauge"
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}
