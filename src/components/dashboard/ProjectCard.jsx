@@ -3,7 +3,7 @@ import { Clock, Settings, Download, Edit3, Copy, Archive, ArchiveRestore, Trash2
 
 import { useAuth } from '../../contexts/AuthContext';
 
-export default function ProjectCard({
+const ProjectCard = React.memo(({
   project,
   referenceProjectId,
   openSettingsId,
@@ -17,8 +17,8 @@ export default function ProjectCard({
   onDelete,
   onUnlock,
   onOpenWorkspace,
-  showConfirm // useConfirm context를 Dashboard에서 받아옴
-}) {
+  showConfirm
+}) => {
   const { currentUser } = useAuth();
   const isLockedByOther = project.is_locked && project.locked_by !== currentUser;
   const isArchived = project.is_archived;
@@ -67,7 +67,7 @@ export default function ProjectCard({
 
   return (
     <div
-      className={`relative group rounded-2xl shadow-sm border p-6 transition-all ${isArchived ? 'bg-slate-50 border-slate-200 opacity-80' : 'bg-white'} ${isLockedByOther ? 'opacity-70 border-rose-200 cursor-not-allowed' : 'border-slate-200/80 hover:shadow-md hover:border-blue-200'}`}
+      className={`relative group rounded-xl shadow-sm border p-4 transition-all ${isArchived ? 'bg-slate-50 border-slate-200 opacity-80' : 'bg-white'} ${isLockedByOther ? 'opacity-70 border-rose-200 cursor-not-allowed' : 'border-slate-200/80 hover:shadow-md hover:border-blue-200'}`}
     >
       {/* 상단 배지 영역 */}
       <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
@@ -89,13 +89,18 @@ export default function ProjectCard({
         )}
       </div>
 
-      <div className="flex justify-between items-start mb-4 mt-2">
-        <div className="flex-1 pr-4">
-          <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
-            {project.name}
-          </h3>
-          <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-1 whitespace-nowrap overflow-hidden text-ellipsis" title={`${formatDate(project.updated)} 업데이트됨`}>
-            <Clock size={12} className="shrink-0" /> {formatDate(project.updated)} 업데이트됨
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1 min-w-0 pr-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-bold text-slate-800 truncate">
+              {project.name}
+            </h3>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${isArchived ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+              {isArchived ? 'Archived' : 'Active'}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title={`${formatDate(project.updated)} 업데이트됨`}>
+            <Clock size={10} className="shrink-0" /> {formatDate(project.updated)}
           </p>
         </div>
         
@@ -223,15 +228,7 @@ export default function ProjectCard({
         </div>
       </div>
 
-      <div className="mt-6 pt-4 border-t border-slate-100 space-y-4">
-        {/* 차수 정보 및 상태 배지 */}
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Current Status</span>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${isArchived ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-green-50 text-green-700 border-green-200 animate-pulse'}`}>
-            {isArchived ? 'Project Archived' : 'Active (Draft)'}
-          </span>
-        </div>
-
+      <div className="mt-3 pt-3 border-t border-slate-50">
         {/* 주요 액션 버튼 영역 */}
         <div className="flex flex-col gap-2">
           {isLockedByOther ? (
@@ -292,4 +289,6 @@ export default function ProjectCard({
       )}
     </div>
   );
-}
+});
+
+export default ProjectCard;

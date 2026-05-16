@@ -752,9 +752,6 @@ function App() {
     const proj = projectsList.find(p => p.id === projectId);
     if (!proj) return;
 
-    // [V1.5.3] 접근 기록 트래킹
-    trackAccess(projectId);
-
     if (isDemoMode) {
       console.log('🚀 [Demo Mode] Local 데이터를 사용하여 워크스페이스를 엽니다.');
       setProjectData(proj.project_data);
@@ -854,6 +851,10 @@ function App() {
 
     window.history.pushState({ type: 'WORKSPACE', projectId, phase }, '', '#workspace');
     setIsFormDirty(false); 
+    
+    // [V1.5.3] 접근 기록 트래킹 (실제 진입 성공 시점에만 기록)
+    trackAccess(projectId);
+    
     setViewState('WORKSPACE');
   };
 

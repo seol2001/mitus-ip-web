@@ -279,34 +279,46 @@ export default function Dashboard({
         onSortOrderChange={setSortOrder}
       />
 
-      {/* 3. 프로젝트 카드 그리드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedProjects.map(proj => (
-          <ProjectCard 
-            key={proj.id}
-            project={proj}
-            // currentUser comes from Context in ProjectCard
-            referenceProjectId={referenceProjectId}
-            openSettingsId={openSettingsId}
-            setOpenSettingsId={setOpenSettingsId}
-            openDropdownId={openDropdownId}
-            setOpenDropdownId={setOpenDropdownId}
-            onExport={handleExportProject}
-            onManage={onManageProject}
-            onToggleArchive={handleToggleArchive}
-            onResetReference={handleResetReference}
-            onDelete={setDeleteModalProj}
-            onUnlock={setUnlockModalProj}
-            onOpenWorkspace={openWorkspace}
-            showConfirm={showConfirm}
-          />
-        ))}
-
-        {sortedProjects.length === 0 && (
-          <div className="col-span-full py-12 text-center text-slate-400">
-            <p>표시할 프로젝트가 없습니다. 'New Project'를 클릭하여 시작하세요.</p>
+      {/* 3. 섹션 레이아웃 (Project Section) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden flex flex-col">
+        <div className="flex items-center gap-4 p-5 bg-slate-50/50 border-b border-slate-100">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm text-2xl border border-slate-100">
+            🚀
           </div>
-        )}
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 leading-tight">Active Project Inventory</h2>
+            <p className="text-xs text-slate-500 font-medium">진행 중인 모든 프로젝트를 관리하고 편집합니다.</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar overscroll-contain contain-layout">
+            {sortedProjects.map(proj => (
+              <ProjectCard 
+                key={proj.id}
+                project={proj}
+                referenceProjectId={referenceProjectId}
+                openSettingsId={openSettingsId}
+                setOpenSettingsId={setOpenSettingsId}
+                openDropdownId={openDropdownId}
+                setOpenDropdownId={setOpenDropdownId}
+                onExport={handleExportProject}
+                onManage={onManageProject}
+                onToggleArchive={handleToggleArchive}
+                onResetReference={handleResetReference}
+                onDelete={setDeleteModalProj}
+                onUnlock={setUnlockModalProj}
+                onOpenWorkspace={openWorkspace}
+                showConfirm={showConfirm}
+              />
+            ))}
+
+            {sortedProjects.length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-400">
+                <p>표시할 프로젝트가 없습니다. 'New Project'를 클릭하여 시작하세요.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 4. Global IP Dictionary 섹션 */}

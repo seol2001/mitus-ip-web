@@ -14,17 +14,22 @@ export default function SubBlockCatalogSection({
   openWorkspace
 }) {
   return (
-    <div className="mt-12 bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden flex flex-col">
       <div 
         onClick={() => setIsSubBlockOpen(!isSubBlockOpen)}
-        className="flex justify-between items-center p-6 cursor-pointer hover:bg-slate-50 transition-colors"
+        className="flex justify-between items-center p-5 cursor-pointer hover:bg-slate-50 transition-colors bg-slate-50/50 border-b border-slate-100"
       >
-        <div className="flex-1">
-          <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-            <span className="text-blue-600">🧩</span> Sub-Block Reference Catalog
-            <ChevronDown size={20} className={`text-slate-400 transition-transform duration-300 ${isSubBlockOpen ? 'rotate-180' : ''}`} />
-          </h2>
-          <p className="text-sm text-slate-500 mt-1 font-medium">모든 IP 내부에 구성된 서브 블록(BOM)들을 통합 검색하고 참조합니다.</p>
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm text-2xl border border-slate-100">
+            🧩
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 leading-tight">
+              Sub-Block Reference Catalog
+              <ChevronDown size={18} className={`text-slate-400 transition-transform duration-300 ${isSubBlockOpen ? 'rotate-180' : ''}`} />
+            </h2>
+            <p className="text-xs text-slate-500 font-medium">통합 검색 및 참조용 서브 블록 라이브러리입니다.</p>
+          </div>
         </div>
         
         <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
@@ -48,7 +53,7 @@ export default function SubBlockCatalogSection({
       </div>
 
       {isSubBlockOpen && (
-        <div className="p-6 pt-2 border-t border-slate-100 bg-slate-50/30">
+        <div className="p-5 border-t border-slate-100 overflow-y-auto max-h-[600px] overscroll-contain contain-layout custom-scrollbar bg-slate-50/30">
           {sortedSubBlockGroups.length === 0 ? (
             <div className="py-12 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
               검색 결과가 없습니다.

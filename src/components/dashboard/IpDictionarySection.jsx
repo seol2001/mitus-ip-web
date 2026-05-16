@@ -22,17 +22,22 @@ export default function IpDictionarySection({
   };
 
   return (
-    <div className="mt-12 bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden flex flex-col">
       <div 
         onClick={() => setIsIpDictOpen(!isIpDictOpen)}
-        className="flex justify-between items-center p-6 cursor-pointer hover:bg-slate-50 transition-colors"
+        className="flex justify-between items-center p-5 cursor-pointer hover:bg-slate-50 transition-colors bg-slate-50/50 border-b border-slate-100"
       >
-        <div>
-          <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-            <span className="text-indigo-600">📚</span> Global IP Dictionary
-            <ChevronDown size={20} className={`text-slate-400 transition-transform duration-300 ${isIpDictOpen ? 'rotate-180' : ''}`} />
-          </h2>
-          <p className="text-sm text-slate-500 mt-1 font-medium">전사적으로 관리되는 표준 및 커스텀 IP 카탈로그입니다.</p>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-white shadow-sm text-2xl border border-slate-100">
+            📚
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 leading-tight">
+              Global IP Dictionary
+              <ChevronDown size={18} className={`text-slate-400 transition-transform duration-300 ${isIpDictOpen ? 'rotate-180' : ''}`} />
+            </h2>
+            <p className="text-xs text-slate-500 font-medium">전사 표준 및 커스텀 IP 카탈로그입니다.</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <button 
@@ -51,7 +56,8 @@ export default function IpDictionarySection({
       </div>
 
       {isIpDictOpen && (
-        <div className="p-6 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 border-t border-slate-100 mt-2">
+        <div className="p-5 overflow-y-auto max-h-[600px] overscroll-contain contain-layout custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {Object.entries(globalIpDictionary || {}).map(([category, ips]) => (
           <div key={category} className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-3 border-b border-slate-200/60 pb-2">
@@ -102,6 +108,7 @@ export default function IpDictionarySection({
             </div>
           </div>
         ))}
+        </div>
       </div>
       )}
     </div>
