@@ -186,7 +186,7 @@ export default React.memo(function IssueSummaryCard({
             )}
 
             <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-              <span className="text-[15px] font-semibold text-gray-900 tracking-tight leading-tight mr-1">
+              <span className="text-[13px] font-semibold text-slate-800 tracking-tight leading-tight mr-1">
                 {issueId}
               </span>
               {badges.map((b, i) => (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Settings, Download, Edit3, Copy, Archive, ArchiveRestore, Trash2, History, ChevronDown, Unlock as UnlockIcon } from 'lucide-react';
+import { Clock, Settings, Download, Edit3, Copy, Archive, ArchiveRestore, Trash2, History, ChevronDown, Unlock as UnlockIcon, Cpu, AlertCircle, Link2 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -58,56 +58,109 @@ const ProjectCard = React.memo(({
       show,
       isStale,
       minutes: diffMins,
-      // 문구 개선: "마지막 활동" 명시 및 권한 회수 안내
+      // 대폭 축소한 영문 문구로 카드 너비 내에 완벽히 맞춤
       text: isStale 
-        ? `${project.locked_by}님 활동 없음 (마지막 활동 ${diffMins}분 전) - 권한 회수 가능`
-        : `${project.locked_by}님 편집 중 (마지막 활동 ${diffMins}분 전)`
+        ? `Stale: ${project.locked_by} (${diffMins}m)`
+        : `Locked: ${project.locked_by} (${diffMins}m)`,
+      // 호버 시 노출되는 디테일한 다국어 툴팁
+      tooltip: isStale
+        ? `${project.locked_by}님 활동 없음 (${diffMins}분 경과) - 클릭 시 편집 잠금을 강제 해제할 수 있습니다.`
+        : `${project.locked_by}님이 편집 중입니다 (마지막 활동 ${diffMins}분 전).`
     };
   }, [project.is_locked, project.locked_at, project.locked_by, currentUser]);
 
+  // 대시보드 카드용 핵심 엔지니어링 메트릭 동적 계산
+  const metrics = React.useMemo(() => {
+    const latestEvt = project.latest_evt;
+    const revisionData = project.project_data?.revisions?.[latestEvt] || project.project_data || {};
+    
+    // 1. 총 IP 수 계산 (선언된 IP_Blocks를 우선시하고, 없을 경우 ipIndex 키 개수로 대체)
+    const ipBlocks = (revisionData.projectOverview?.IP_Blocks && revisionData.projectOverview.IP_Blocks.length > 0)
+      ? revisionData.projectOverview.IP_Blocks
+      : (revisionData.ipIndex ? Object.keys(revisionData.ipIndex) : []);
+    const ipCount = ipBlocks.length;
+    
+    // 2. 이슈 수 계산 (전체 이슈 및 미해결 Open 이슈 개수)
+    const issues = revisionData.revisionLog?.issues || [];
+    const totalIssues = issues.length;
+    const openIssues = issues.filter(issue => issue.assessment !== 'Fixed').length;
+    
+    // 3. IP별 미해결 잔여 이슈 개수 매핑 계산
+    const ipOpenIssuesMap = {};
+    ipBlocks.forEach(ip => {
+      ipOpenIssuesMap[ip] = 0;
+    });
+    
+    issues.forEach(issue => {
+      const isOpen = issue.assessment !== 'Fixed';
+      if (isOpen) {
+        let ipName = issue.ipBlock;
+        if (!ipName && issue.targetIssue) {
+          ipName = issue.targetIssue.split('.')[0];
+        }
+        if (ipName) {
+          // 대소문자 유연하게 대응하여 선언된 IP 목록에 매핑
+          const matchedIp = ipBlocks.find(ip => ip.toLowerCase() === ipName.toLowerCase());
+          if (matchedIp) {
+            ipOpenIssuesMap[matchedIp] += 1;
+          }
+        }
+      }
+    });
+    
+    // 4. 연동된 FA 리포트 수 계산
+    const faCount = revisionData.faReport?.faReports?.length || 0;
+    
+    return {
+      ipBlocks,
+      ipCount,
+      totalIssues,
+      openIssues,
+      ipOpenIssuesMap,
+      faCount
+    };
+  }, [project.latest_evt, project.project_data]);
+
   return (
     <div
-      className={`relative group rounded-xl shadow-sm border p-4 transition-all ${isArchived ? 'bg-slate-50 border-slate-200 opacity-80' : 'bg-white'} ${isLockedByOther ? 'opacity-70 border-rose-200 cursor-not-allowed' : 'border-slate-200/80 hover:shadow-md hover:border-blue-200'}`}
+      className={`relative group rounded-xl shadow-sm border p-4 transition-all h-full flex flex-col ${isArchived ? 'bg-slate-50 border-slate-200 opacity-80' : 'bg-white'} ${isLockedByOther ? 'opacity-70 border-rose-200 cursor-not-allowed' : 'border-slate-200/80 hover:shadow-md hover:border-blue-200'}`}
     >
       {/* 상단 배지 영역 */}
       <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
-        {isReference && (
-          <div className="bg-amber-100 border border-amber-400 text-amber-800 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm whitespace-nowrap">
-            <span>⭐</span> Reference
-          </div>
-        )}
         {lockInfo.show && (
-          <div className={`border text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm whitespace-nowrap ${lockInfo.isStale ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-rose-100 border-rose-300 text-rose-800'}`}>
+          <div 
+            className={`border text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm whitespace-nowrap ${lockInfo.isStale ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-rose-100 border-rose-300 text-rose-800'}`}
+            title={lockInfo.tooltip}
+          >
             <span>{lockInfo.isStale ? '⚠️' : '🔒'}</span> 
             {lockInfo.text}
           </div>
         )}
         {isArchived && (
-          <div className="bg-slate-200 border border-slate-300 text-slate-700 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm whitespace-nowrap">
-            <Archive size={12}/> Archived
+          <div className="bg-slate-700 border border-slate-600 text-slate-100 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap transition-all duration-300">
+            <Archive size={10}/> Archived
           </div>
         )}
       </div>
 
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex-1 min-w-0 pr-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-base font-bold text-slate-800 truncate">
-              {project.name}
-            </h3>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${isArchived ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-              {isArchived ? 'Archived' : 'Active'}
+      {/* Row 1: Title/Ref (Left) & Settings Gear (Right) */}
+      <div className="flex justify-between items-center mb-1.5">
+        <div className="flex items-center gap-2 min-w-0 pr-2">
+          <h3 className="text-base font-bold text-slate-800 truncate" title={project.name}>
+            {project.name}
+          </h3>
+          {isReference && (
+            <span className="bg-amber-50 border border-amber-200 text-amber-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 flex items-center gap-0.5 shadow-sm">
+              ⭐ Ref
             </span>
-          </div>
-          <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis" title={`${formatDate(project.updated)} 업데이트됨`}>
-            <Clock size={10} className="shrink-0" /> {formatDate(project.updated)}
-          </p>
+          )}
         </div>
         
-        <div className="flex flex-col items-end gap-2 relative">
+        <div className="relative shrink-0">
           <button 
             onClick={() => setOpenSettingsId(openSettingsId === project.id ? null : project.id)}
             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors dropdown-trigger"
+            title="Project Settings"
           >
             <Settings size={18} />
           </button>
@@ -228,40 +281,106 @@ const ProjectCard = React.memo(({
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-slate-50">
+      {/* Row 2: Issues statistics badge centered with elegant divider lines */}
+      <div className="flex items-center w-full mb-1">
+        <div className="flex-grow border-t border-slate-200/60"></div>
+        {metrics.openIssues > 0 ? (
+          <span 
+            className="mx-3 bg-amber-50/50 border border-amber-200/40 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1.5 shadow-sm transition-all"
+            title={`Open Issues: ${metrics.openIssues} / Total: ${metrics.totalIssues}`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Issues: {metrics.openIssues}/{metrics.totalIssues}
+          </span>
+        ) : (
+          <span 
+            className="mx-3 bg-slate-50 border border-slate-200/60 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1.5 shadow-sm transition-all"
+            title="All issues resolved"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+            Issues: Clear
+          </span>
+        )}
+        <div className="flex-grow border-t border-slate-200/60"></div>
+      </div>
+
+      {/* [Gemma4 & Qwen 27B] 바둑판 격자형 IP 블록 태그 리스트 */}
+      <div className="mt-1.5 mb-4">
+        {metrics.ipBlocks && metrics.ipBlocks.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2 w-full">
+            {[...metrics.ipBlocks]
+              .sort((a, b) => {
+                const countA = metrics.ipOpenIssuesMap[a] || 0;
+                const countB = metrics.ipOpenIssuesMap[b] || 0;
+                // 1. 이슈 개수가 많은 것 우선 배치 (이슈 보유 IP 최상단 노출)
+                if (countA !== countB) {
+                  return countB - countA;
+                }
+                // 2. 이슈 개수가 같으면, 글자 수가 짧은 순서대로 배치 (좁은 공간 짤림 방지 최적화)
+                return a.length - b.length;
+              })
+              .map(ip => {
+                const openCount = metrics.ipOpenIssuesMap[ip] || 0;
+                return (
+                  <div 
+                    key={ip} 
+                    className={`text-[10px] font-mono font-bold py-1.5 px-2 rounded-lg border transition-all duration-300 hover:shadow-sm hover:-translate-y-[0.5px] cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${isArchived ? 'bg-slate-100/80 text-slate-500 border-slate-200/50 hover:bg-slate-200/80 hover:border-slate-300/80 hover:text-slate-700' : 'bg-slate-50/70 text-slate-700 border-slate-200/60 hover:bg-blue-50/40 hover:text-blue-600 hover:border-blue-200/80'}`}
+                    title={`${ip}${openCount > 0 ? ` (${openCount} Open Issues)` : ' (No Open Issues)'} - 클릭 시 Revision Log로 이동하여 필터링`}
+                    onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Revision_Log', ip, isArchived ? 'readonly' : 'edit')}
+                  >
+                    <div className="flex items-center justify-between gap-1 w-full">
+                      <span className="truncate text-left flex-1" style={{ minWidth: 0 }}>
+                        {ip}
+                      </span>
+                      {openCount > 0 && (
+                        <span className="text-amber-600 font-bold shrink-0 pl-0.5">
+                          ({openCount})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        ) : (
+          <div className="text-center py-2 text-[10px] font-bold text-slate-400 font-mono border border-dashed border-slate-200 rounded-lg">
+            No IP Blocks
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto pt-3 border-t border-slate-100/80">
         {/* 주요 액션 버튼 영역 */}
-        <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
           {isLockedByOther ? (
             // [UX 하드닝] 타인이 점유 중일 때: 목록에서 권한을 탈취하는 대신 '접속 시도'로 유도 (진입 시 모달에서 결정)
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Project_Overview', null, 'edit')}
-                className="w-full flex items-center justify-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition-all shadow-sm active:scale-95"
-              >
-                <Clock size={16} /> {project.latest_evt} 접속 시도 (잠김)
-              </button>
-            </div>
+            <button
+              onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Project_Overview', null, 'edit')}
+              className="w-full flex items-center justify-center gap-1.5 text-xs font-bold py-1.5 px-3 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition-all shadow-sm active:scale-95"
+            >
+              <Clock size={12} /> {project.latest_evt} 접속 시도 (잠김)
+            </button>
           ) : (
             // 2. 점유 중이지 않을 때: 바로 최신 차수 편집 진입
-            <div className="flex gap-2">
+            <>
               <button
                 onClick={() => onOpenWorkspace(project.id, project.latest_evt, 'Project_Overview', null, isArchived ? 'readonly' : 'edit')}
-                className={`flex-1 flex items-center justify-center gap-2 text-sm font-bold px-4 py-2.5 rounded-xl transition-all ${isArchived ? 'bg-slate-50 text-slate-500 border border-slate-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100 shadow-sm active:scale-95'}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-bold py-1.5 px-3 rounded-lg transition-all active:scale-95 shadow-sm ${isArchived ? 'bg-slate-50/50 text-slate-500 border border-slate-200/60 hover:bg-slate-100/60' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100/80 hover:text-blue-700 hover:border-blue-300'}`}
               >
-                {isArchived ? <Clock size={16} /> : <UnlockIcon size={16} />}
+                {isArchived ? <Clock size={12} /> : <UnlockIcon size={12} />}
                 {project.latest_evt} {isArchived ? '관찰' : '편집'} 접속
               </button>
               
               {/* 과거 차수 선택 (드롭다운) */}
               <button
                 onClick={() => setOpenDropdownId(openDropdownId === project.id ? null : project.id)}
-                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-all flex items-center gap-1 dropdown-trigger"
+                className="py-1.5 px-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-all flex items-center gap-0.5 dropdown-trigger"
                 title="다른 차수(History) 선택"
               >
-                <History size={18} />
-                <ChevronDown size={14} />
+                <History size={13} />
+                <ChevronDown size={11} />
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>

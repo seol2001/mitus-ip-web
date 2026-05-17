@@ -176,6 +176,10 @@ export default function Dashboard({
     const filtered = projects.filter(p => showArchived || !p.is_archived);
     
     return [...filtered].sort((a, b) => {
+      // referenceProjectId (SM5718)가 항상 가장 첫 번째에 위치하도록 강제
+      if (a.id === referenceProjectId) return -1;
+      if (b.id === referenceProjectId) return 1;
+
       switch (sortOrder) {
         case 'updated_desc':
           return new Date(b.updated || 0) - new Date(a.updated || 0);
@@ -191,7 +195,7 @@ export default function Dashboard({
           return 0;
       }
     });
-  }, [projects, showArchived, sortOrder, accessLog]);
+  }, [projects, showArchived, sortOrder, accessLog, referenceProjectId]);
 
   // 잠금 상태 분석 헬퍼
   // --- Sub-Block Catalog 추출 로직 ---
@@ -286,12 +290,12 @@ export default function Dashboard({
             🚀
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-800 leading-tight">Active Project Inventory</h2>
-            <p className="text-xs text-slate-500 font-medium">진행 중인 모든 프로젝트를 관리하고 편집합니다.</p>
+            <h2 className="text-lg font-bold text-slate-800 leading-tight">Project Inventory</h2>
+            <p className="text-xs text-slate-500 font-medium">프로젝트 목록을 관리하고 편집합니다.</p>
           </div>
         </div>
         <div className="p-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar overscroll-contain contain-layout">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-h-[580px] overflow-y-auto pt-4 pb-3 px-1.5 pr-2 custom-scrollbar overscroll-contain contain-layout">
             {sortedProjects.map(proj => (
               <ProjectCard 
                 key={proj.id}

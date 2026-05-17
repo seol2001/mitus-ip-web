@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
-import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity, Plus, X, Eye, RefreshCw, Lock, Link, AlertTriangle, ChevronDown, ChevronRight, Archive } from 'lucide-react';
+import { FileText, AlertCircle, Edit2, Trash2, CheckCircle, FolderOpen, Activity, Plus, X, Eye, RefreshCw, Lock, Link, AlertTriangle, ChevronDown, ChevronRight, Archive, Check } from 'lucide-react';
 import IssueSummaryCard from '../IssueSummaryCard';
 import IssueForm from '../IssueForm';
 import ActionBar from '../ActionBar';
@@ -15,7 +15,7 @@ import { useLogData } from '../../hooks/revisionLog/useLogData';
 import { useLogForm } from '../../hooks/revisionLog/useLogForm';
 import { useAsyncAction } from '../../hooks/revisionLog/useAsyncAction';
 
-const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onFormDirtyChange, onForceUnlock }, ref) => {
+const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onFormDirtyChange, onForceUnlock, selectedIp }, ref) => {
   // 1. Logic & Utils
   const safeData = useMemo(() => data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' }, [data]);
   const project = overviewData?.Project_Name || 'Proj';
@@ -31,7 +31,14 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   // 2. Custom Hooks (The Granular Architecture)
   const { 
     ipDropdown, setIpDropdown, statusFilter, setStatusFilter, mode, setMode
-  } = useLogFilter('All', safeData.initialMode || 'new');
+  } = useLogFilter(selectedIp || 'All', safeData.initialMode || 'new');
+
+  // ── [보안/성능] selectedIp 변경 시 ipDropdown 동기화 ──
+  useEffect(() => {
+    if (selectedIp) {
+      setIpDropdown(selectedIp);
+    }
+  }, [selectedIp, setIpDropdown]);
 
   const { 
     latestIssueStates, stats, sortedIssues, issues, historyBlocks 
@@ -60,6 +67,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTargetId, setHistoryTargetId] = useState('');
   const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   const [isTabEditing, setIsTabEditing] = useState(false);
   const isReadOnly = isArchived || !isTabEditing;
@@ -494,8 +502,8 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
          </div>
        )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-center">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col justify-center h-full">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-1 bg-gray-100 p-1 rounded-lg m-0">
               <button onClick={() => handleTabSwitch('eval')} disabled={stage === 'EVT0'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'eval' ? 'bg-white shadow text-blue-600 border-t-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT0' ? 'opacity-50 cursor-not-allowed' : ''}`}>이전 차수 수정 평가</button>
               <button onClick={() => handleTabSwitch('carryover')} disabled={stage === 'EVT0'} className={`flex-1 py-1.5 rounded-md font-medium text-sm transition-colors ${mode === 'carryover' ? 'bg-white shadow text-purple-600 border-t-2 border-purple-500' : 'text-gray-500 hover:text-gray-700'} ${stage === 'EVT0' ? 'opacity-50 cursor-not-allowed' : ''}`}>자동 이월 이슈 관리</button>
@@ -508,18 +516,42 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
             </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center overflow-x-auto whitespace-nowrap">
-          <div className="flex flex-row items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1">IP 선택</span>
-            <button onClick={() => handleIpChange('All')} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === 'All' ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
-              All<span className="ml-1.5 text-[10px] opacity-40">○</span>
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center overflow-x-auto whitespace-nowrap h-full scrollbar-hide">
+          <div className="flex flex-row items-center gap-2 w-full">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1.5">IP 선택</span>
+            <button
+              onClick={() => handleIpChange('All')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all duration-200 shrink-0 border ${
+                ipDropdown === 'All'
+                  ? 'bg-blue-50 text-blue-600 border-blue-200 font-bold shadow-sm'
+                  : 'bg-slate-50/50 text-slate-600 border-slate-200/80 hover:bg-slate-100/50 hover:border-slate-300'
+              }`}
+            >
+              <span>All</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${ipDropdown === 'All' ? 'bg-blue-500' : 'border border-slate-400'}`} />
             </button>
-            {availableIps.filter(ip => ip !== 'All' && ip !== 'Common').map(ip => (
-              <button key={ip} onClick={() => handleIpChange(ip)} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all shrink-0 ${ipDropdown === ip ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300'}`}>
-                {ip}
-                {issues.some(i => i.entryMode === 'new' && i.ipBlock === ip) ? <span className="ml-1.5 text-[10px] opacity-80">✓</span> : <span className="ml-1.5 text-[10px] opacity-40">○</span>}
-              </button>
-            ))}
+            {availableIps.filter(ip => ip !== 'All' && ip !== 'Common').map(ip => {
+              const isSelected = ipDropdown === ip;
+              const hasIssues = issues.some(i => i.entryMode === 'new' && i.ipBlock === ip);
+              return (
+                <button
+                  key={ip}
+                  onClick={() => handleIpChange(ip)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all duration-200 shrink-0 border ${
+                    isSelected
+                      ? 'bg-blue-50 text-blue-600 border-blue-200 font-bold shadow-sm'
+                      : 'bg-slate-50/50 text-slate-600 border-slate-200/80 hover:bg-slate-100/50 hover:border-slate-300'
+                  }`}
+                >
+                  <span>{ip}</span>
+                  {hasIssues ? (
+                    <Check size={11} className={isSelected ? 'text-blue-500' : 'text-slate-400'} />
+                  ) : (
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-500' : 'border border-slate-400'}`} />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -602,38 +634,70 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
               />
           </div>
 
-          {historyBlocks.length > 0 && (
-            <div className="mt-8 space-y-3">
-               <h3 className="text-sm font-bold border-b border-gray-200 pb-2 text-gray-700 flex items-center gap-2">
-                 <FolderOpen size={15} /> Previous Stages History
-               </h3>
-              {historyBlocks.map((block, idx) => {
-                const filteredHits = block.issues.filter(i => ipDropdown === 'All' ? true : (i.ipBlock || (i.targetIssue ? i.targetIssue.split('.')[0] : '')) === ipDropdown);
-                if (filteredHits.length === 0) return null;
-                return (
-                  <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 opacity-80 mt-3">
-                    <h4 className="text-sm font-bold mb-3 flex items-center gap-2 border-b border-gray-100 pb-2 text-gray-600">
-                      <FolderOpen size={14} /> Stage: {block.stageName}
-                    </h4>
-                    <div className="space-y-2">
-                      {filteredHits.map(item => (
-                        <IssueSummaryCard
-                          key={item.id}
-                          item={item}
-                          project={project}
-                          isReadOnly={true}
-                          expandable
-                          onEdit={handleHistoryCardClick}
-                          historyStage={block.stageName}
-                          needsEval={false}
-                        />
-                      ))}
+          {historyBlocks.length > 0 && (() => {
+            const totalHistoryCount = historyBlocks.reduce((acc, block) => {
+              const filtered = block.issues.filter(i => ipDropdown === 'All' ? true : (i.ipBlock || (i.targetIssue ? i.targetIssue.split('.')[0] : '')) === ipDropdown);
+              return acc + filtered.length;
+            }, 0);
+
+            if (totalHistoryCount === 0) return null;
+
+            return (
+              <div className="mt-8">
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+                  className="w-full flex items-center justify-between border-b border-gray-200 pb-2 text-gray-700 hover:text-gray-900 transition-colors focus:outline-none"
+                  aria-expanded={isHistoryExpanded}
+                >
+                  <h3 className="text-sm font-bold flex items-center gap-2 m-0 select-none">
+                    <FolderOpen size={15} className="text-slate-500" />
+                    Previous Stages History
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold select-none">
+                      {totalHistoryCount}건
+                    </span>
+                    <span className={`transform transition-transform duration-300 text-slate-400 ${isHistoryExpanded ? 'rotate-180' : ''}`}>
+                      <ChevronDown size={16} />
+                    </span>
+                  </div>
+                </button>
+
+                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isHistoryExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                  <div className="overflow-hidden">
+                    <div className="pt-3 space-y-3">
+                      {historyBlocks.map((block, idx) => {
+                        const filteredHits = block.issues.filter(i => ipDropdown === 'All' ? true : (i.ipBlock || (i.targetIssue ? i.targetIssue.split('.')[0] : '')) === ipDropdown);
+                        if (filteredHits.length === 0) return null;
+                        return (
+                          <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 opacity-80 mt-3 first:mt-0">
+                            <h4 className="text-sm font-bold mb-3 flex items-center gap-2 border-b border-gray-100 pb-2 text-gray-600">
+                              <FolderOpen size={14} /> Stage: {block.stageName}
+                            </h4>
+                            <div className="space-y-2">
+                              {filteredHits.map(item => (
+                                <IssueSummaryCard
+                                  key={item.id}
+                                  item={item}
+                                  project={project}
+                                  isReadOnly={true}
+                                  expandable
+                                  onEdit={handleHistoryCardClick}
+                                  historyStage={block.stageName}
+                                  needsEval={false}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              </div>
+            );
+          })()}
           </div>
 
         </div>

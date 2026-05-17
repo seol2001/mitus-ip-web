@@ -92,6 +92,7 @@ const WorkspaceContent = ({
               onEditingStateChange={handleEditingStateChange}
               onFormDirtyChange={handleFormDirtyChange}
               onForceUnlock={() => handleForceUnlock(activeProject.id)}
+              selectedIp={initialIpForIpIndex}
             />
           )}
           {activeTab === 'FA_Report' && (

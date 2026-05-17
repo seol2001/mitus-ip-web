@@ -7,17 +7,22 @@ import { getIssueStatus } from '../../logic/revisionLogLogic';
 const SectionHeader = ({ section, title, icon, count, colorClass, textColorClass, iconColorClass, badgeClass, isExpanded, onToggle }) => (
   <div
     onClick={() => onToggle(section)}
-    className={`flex items-center justify-between border-b pb-2 cursor-pointer px-2 -mx-2 rounded-lg transition-colors group mb-1 ${colorClass}`}
+    className="flex flex-col items-center justify-center cursor-pointer group mb-1 select-none"
   >
-    <h3 className={`text-sm font-semibold flex items-center gap-2 ${textColorClass}`}>
-      <span className={`transition-colors ${iconColorClass}`}>
-        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+    <div className={`flex items-center gap-2 px-3.5 py-1 rounded-full border shadow-sm transition-all duration-200 hover:shadow-md ${colorClass}`}>
+      <h3 className={`text-xs font-bold tracking-[0.1em] flex items-center gap-1.5 ${textColorClass}`}>
+        <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'} ${iconColorClass}`}>
+          <ChevronDown size={14} />
+        </span>
+        {icon}
+        <span>{title}</span>
+      </h3>
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badgeClass}`}>
+        {count}건
       </span>
-      {icon} {title}
-    </h3>
-    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>
-      {count}건
-    </span>
+    </div>
+    {/* 중앙 장식 구분선 (앵커 효과) */}
+    <div className="w-12 h-[2px] bg-slate-200 mt-2.5 rounded-full group-hover:bg-slate-300 transition-colors" />
   </div>
 );
 
@@ -141,20 +146,20 @@ const RevisionLogVirtualList = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-7">
 
       {/* Section 1: ACTION REQUIRED */}
       {(pendingEvalItems.length + pendingCarryoverItems.length) > 0 && (
         <div>
           <SectionHeader
             section="actionRequired"
-            title="[ACTION REQUIRED] 조치 필요 항목"
-            icon={<AlertCircle size={16} />}
+            title="조치 필요 항목"
+            icon={<AlertCircle size={15} />}
             count={pendingEvalItems.length + pendingCarryoverItems.length}
-            colorClass="border-red-200 hover:bg-red-50/50"
+            colorClass="border-red-100 bg-red-50/20 hover:bg-red-50/50"
             textColorClass="text-red-600"
             iconColorClass="text-red-400 group-hover:text-red-600"
-            badgeClass="text-red-600 bg-red-50"
+            badgeClass="text-red-600 bg-red-50/80"
             isExpanded={expandedSections.actionRequired}
             onToggle={toggleSection}
           />
@@ -214,13 +219,13 @@ const RevisionLogVirtualList = ({
         <div>
           <SectionHeader
             section="newFindings"
-            title="[NEW FINDINGS] 신규 등록 리스크"
-            icon={<Plus size={16} />}
+            title="신규 등록 리스트"
+            icon={<Plus size={15} />}
             count={newFindings.length}
-            colorClass="border-blue-200 hover:bg-blue-50/50"
+            colorClass="border-blue-100 bg-blue-50/20 hover:bg-blue-50/50"
             textColorClass="text-blue-700"
             iconColorClass="text-blue-400 group-hover:text-blue-700"
-            badgeClass="text-blue-700 bg-blue-50"
+            badgeClass="text-blue-700 bg-blue-50/80"
             isExpanded={expandedSections.newFindings}
             onToggle={toggleSection}
           />
@@ -255,13 +260,13 @@ const RevisionLogVirtualList = ({
         <div>
           <SectionHeader
             section="stillOpen"
-            title="[STILL OPEN / PERSISTENT] 관리 중인 기술 부채"
-            icon={<Activity size={16} />}
+            title="관리 중인 기술 부채"
+            icon={<Activity size={15} />}
             count={stillOpenIssues.length}
-            colorClass="border-orange-300 hover:bg-orange-50/50"
+            colorClass="border-orange-200 bg-orange-50/20 hover:bg-orange-50/50"
             textColorClass="text-orange-700"
             iconColorClass="text-orange-400 group-hover:text-orange-700"
-            badgeClass="text-orange-700 bg-orange-50"
+            badgeClass="text-orange-700 bg-orange-50/80"
             isExpanded={expandedSections.stillOpen}
             onToggle={toggleSection}
           />
@@ -296,13 +301,13 @@ const RevisionLogVirtualList = ({
         <div>
           <SectionHeader
             section="resolved"
-            title="[RESOLVED / DEFERRED] 조치 완료 및 유보"
-            icon={<CheckCircle size={16} />}
+            title="조치 완료 및 유보"
+            icon={<CheckCircle size={15} />}
             count={resolvedDeferredIssues.length}
-            colorClass="border-gray-200 hover:bg-gray-100/50 opacity-80 hover:opacity-100"
+            colorClass="border-gray-200 bg-gray-50/50 hover:bg-gray-100/50 opacity-80 hover:opacity-100"
             textColorClass="text-gray-600"
             iconColorClass="text-gray-400 group-hover:text-gray-600"
-            badgeClass="text-gray-600 bg-gray-100"
+            badgeClass="text-gray-600 bg-gray-100/80"
             isExpanded={expandedSections.resolved}
             onToggle={toggleSection}
           />
