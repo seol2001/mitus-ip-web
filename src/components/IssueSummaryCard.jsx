@@ -7,6 +7,7 @@ export default React.memo(function IssueSummaryCard({
   project,
   isReadOnly = false,
   editingId = null,
+  activeTargetIssue = null,
   onEdit,
   onDelete,
   expandable = false,
@@ -20,14 +21,14 @@ export default React.memo(function IssueSummaryCard({
 
   if (!item) return null;
 
-  const showActions = !isReadOnly;
-  // 카드 전체 클릭 가능 여부: onEdit이 있으면 언제나 클릭 가능
-  const isCurrentlyEditing = editingId === item.id;
-
   const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
   const issueId = isNewLike
     ? `${item.ipBlock}.${project}.${item.issueNum}`
     : item.targetIssue;
+
+  const showActions = !isReadOnly;
+  // 카드 전체 클릭 가능 여부: onEdit이 있으면 언제나 클릭 가능 및 과거 차수 이월/평가 폼 활성화 매칭 반영
+  const isCurrentlyEditing = (editingId === item.id) || (activeTargetIssue && activeTargetIssue === issueId);
 
   // ── Overall Status Logic ──
   const overallStatus = getIssueStatus(item);

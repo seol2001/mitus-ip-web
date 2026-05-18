@@ -35,6 +35,14 @@
 
 ## 📅 버전별 수정 히스토리 (Revision Log)
 
+### [Ver 1.7.2] 🚀 신규: 이월 검토 항목(Carryover) 클릭 시 이력 노선도 원형 노드 점(Circle) 액티브 활성 색상 복원
+- **배포 날짜**: 2026-05-18
+- **핵심 수정 사항**:
+  - **이월 검토 카드 클릭 시 노선도 동그라미(circle) 상태 색상 활성화**:
+    - 기존 `isCurrentlyEditing` 판별 로직이 현재 차수 편집 아이템 ID(`editingId === item.id`) 조건에 국한되어, 클릭 시 `editingId`가 `null`로 리셋되는 과거 차수 이월/평가 대상 검토 카드들은 클릭해도 노선도 점 색상이 무채색 그레이 상태로 굳어 있던 UX 인지 불일치를 해결했습니다.
+    - `RevisionLogTab.jsx`가 들고 있는 폼의 대상 원본 이슈 식별자(`formData?.targetIssue`)를 `activeTargetIssue` 라는 통합 prop으로 가상 리스트(`RevisionLogVirtualList.jsx`)와 이슈 카드(`IssueSummaryCard.jsx`)에 연계 유통시켰습니다.
+    - 카드 활성 판별 조건을 `(editingId === item.id) || (activeTargetIssue && activeTargetIssue === issueId)`로 결합 격상시킴으로써, **이월 검토 항목 카드를 클릭해 이월 처리를 진행하는 도중에도 해당 카드의 이력 노선도 동그라미 점이 예쁜 상태 색상(CLOSED-초록, DEFERRED-파랑, OPEN-빨강)으로 선명하게 피어오르도록 완치**했습니다.
+
 ### [Ver 1.7.1] 🚀 신규: Revision Log 이력 노선도 2차 UI/UX 혁신 및 툴팁 짤림/Stacking Context 오버레이 완치
 - **배포 날짜**: 2026-05-18
 - **핵심 수정 사항**:

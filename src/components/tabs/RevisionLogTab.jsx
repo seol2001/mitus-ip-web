@@ -748,6 +748,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                 historyBlocks={historyBlocks}
                 isReadOnly={isReadOnly}
                 editingId={editingId}
+                activeTargetIssue={formData?.targetIssue || null}
                 stage={stage}
                 handlers={{
                   handleHistoryCardClick,

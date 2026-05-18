@@ -39,6 +39,7 @@ const RevisionLogVirtualList = ({
   historyBlocks,
   isReadOnly,
   editingId,
+  activeTargetIssue = null,
   stage,
   handlers,
   latestIssueStates
@@ -296,6 +297,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={() => handlers.handleHistoryCardClick(item)}
                     currentStage={stage}
                     needsEval={true}
@@ -317,6 +319,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={() => handlers.handleHistoryCardClick(item)}
                     currentStage={stage}
                     needsEval={true}
@@ -359,6 +362,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
@@ -403,6 +407,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isItemReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
@@ -447,6 +452,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isItemReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
@@ -491,6 +497,7 @@ const RevisionLogVirtualList = ({
                     project={project}
                     isReadOnly={isItemReadOnly}
                     editingId={editingId}
+                    activeTargetIssue={activeTargetIssue}
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
