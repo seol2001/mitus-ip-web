@@ -78,7 +78,7 @@ const RevisionLogVirtualList = ({
     if (!issueId) return [];
     
     const timeline = [];
-    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
+    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'EVT4', 'EVT5', 'DVT', 'PVT', 'MP'];
     
     // 1. 과거 차수(historyBlocks) 탐색
     if (historyBlocks && historyBlocks.length > 0) {

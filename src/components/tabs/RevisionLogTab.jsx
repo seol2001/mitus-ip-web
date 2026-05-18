@@ -26,7 +26,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     (overviewData?.IP_Blocks || []).forEach(ip => map[ip] = true);
     return map;
   }, [overviewData?.IP_Blocks]);
-  const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
+  const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'EVT4', 'EVT5', 'DVT', 'PVT', 'MP'];
 
   // 2. Custom Hooks (The Granular Architecture)
   const { 

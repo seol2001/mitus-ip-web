@@ -64,7 +64,7 @@ export default function IssueForm({
   const timeline = useMemo(() => {
     if (!currentIssueId) return [];
     const list = [];
-    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
+    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'EVT4', 'EVT5', 'DVT', 'PVT', 'MP'];
     
     // 1. 과거 히스토리 블록 루프
     (historyBlocks || []).forEach(block => {
