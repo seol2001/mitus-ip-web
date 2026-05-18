@@ -4,7 +4,7 @@ import { getIssueStatus } from '../../logic/revisionLogLogic';
 /**
  * Revision Log의 데이터(이슈 리스트, 통계)를 관리하는 훅
  */
-export const useLogData = (safeData, ipDropdown, validIps, project) => {
+export const useLogData = (safeData, ipDropdown, validIps, project, stage) => {
   const issues = safeData?.issues || [];
   const historyBlocks = safeData?.historyBlocks || [];
 
@@ -12,8 +12,13 @@ export const useLogData = (safeData, ipDropdown, validIps, project) => {
   const latestIssueStates = useMemo(() => {
     const states = {};
     // 히스토리 블록부터 현재 이슈 순으로 덮어씀
-    [...historyBlocks].flatMap(b => b.issues).concat(issues).forEach(item => {
-      const id = item?.entryMode === 'new' 
+    const allHistoricalIssues = [...historyBlocks]
+      .flatMap(b => b.issues || []);
+
+    [...allHistoricalIssues, ...issues].forEach(item => {
+      if (!item) return;
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      const id = isNewLike 
         ? `${item.ipBlock}.${project}.${item.issueNum}` 
         : item?.targetIssue;
       if (id) states[id] = item;
@@ -26,7 +31,8 @@ export const useLogData = (safeData, ipDropdown, validIps, project) => {
     let total = 0, open = 0, closed = 0, deferred = 0;
     
     Object.values(latestIssueStates).forEach(item => {
-      const ip = item?.entryMode === 'new' 
+      const isNewLike = item?.entryMode === 'new' || item?.entryMode === 'fa';
+      const ip = isNewLike 
         ? item?.ipBlock 
         : (item?.targetIssue ? item.targetIssue.split('.')[0] : '');
       
@@ -35,14 +41,22 @@ export const useLogData = (safeData, ipDropdown, validIps, project) => {
       if (ipDropdown === 'All' || mappedIp === ipDropdown) {
         total++;
         const status = getIssueStatus(item);
-        if (status === 'DEFERRED') deferred++;
+        if (status === 'DEFERRED') {
+          // 평가 유보는 해당 차수(Stage)에서 직접 유보 선언된 건만 뱃지 개수 카운트
+          if (!item.stage || item.stage === stage) {
+            deferred++;
+          } else {
+            // 이전 차수에서 유보되었으나 현재 차수에서 아직 최종 판정이 대기 중인 건은 OPEN으로 합산
+            open++;
+          }
+        }
         else if (status === 'OPEN') open++;
         else if (status === 'CLOSED') closed++;
       }
     });
     
     return { total, open, closed, deferred };
-  }, [latestIssueStates, ipDropdown, validIps]);
+  }, [latestIssueStates, ipDropdown, validIps, stage]);
 
   // 3. 정렬된 이슈 리스트 (Memoized)
   const sortedIssues = useMemo(() => {

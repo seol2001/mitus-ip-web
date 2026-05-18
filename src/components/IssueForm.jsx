@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Edit2, FolderOpen, Activity, Link, CheckCircle, Save, X, AlertCircle } from 'lucide-react';
+import { Edit2, FolderOpen, Activity, Link, CheckCircle, Save, X, AlertCircle, Lock, Users } from 'lucide-react';
 import { makeDefaultForm, calcNextNum, getHistory, getIssueStatus, DISPOSITION_OPTIONS, SEVERITY_OPTIONS, VERIFICATION_GAP_OPTIONS } from '../logic/revisionLogLogic';
 
 const lc = "block text-[13px] font-medium text-gray-600 mb-1.5";
-const ic = "px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
-const tc = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none";
+const ic = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
+const tc = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none break-words";
 
 const CustomerAlignmentFields = ({ formData, handleInput, disabled = false }) => (
   <div className="border border-indigo-100 rounded-xl p-4 bg-slate-50 space-y-3">
@@ -116,7 +116,7 @@ export default function IssueForm({
     };
     
     return (
-      <div className="mt-2 bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1">
+      <div className="mt-2 bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1 min-w-0 overflow-hidden">
         <div className="font-bold text-slate-700 mb-1 flex items-center gap-1.5"><Activity size={12}/> Historical Context</div>
         {prev && (
           <div className="text-slate-500 truncate">
@@ -158,17 +158,298 @@ export default function IssueForm({
         if (i.targetIssue) fixedThisStageMap[i.targetIssue] = true;
       });
 
-    const closed = [];
+    const closed = new Set();
     Object.entries(latestIssueStates).forEach(([id, st]) => {
       if (getIssueStatus(st) === 'CLOSED' && !fixedThisStageMap[id]) {
-        closed.push(id);
+        closed.add(id);
       }
     });
-    return closed.sort();
-  }, [latestIssueStates, issues]);
+
+    // 🌟 이미 재오픈 상태인 이슈들의 targetIssue도 드롭다운 목록에 포함시킵니다.
+    issues.forEach(i => {
+      if (i.entryMode === 'reopen' && i.targetIssue) {
+        closed.add(i.targetIssue);
+      }
+    });
+
+    // 🌟 현재 폼 데이터의 타겟 이슈도 명시적으로 누락되지 않도록 목록에 포함시킵니다.
+    if (formData?.targetIssue) {
+      closed.add(formData.targetIssue);
+    }
+
+    return Array.from(closed).sort();
+  }, [latestIssueStates, issues, formData?.targetIssue]);
+
+  if (isReadOnly) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden ring-2 ring-indigo-300/30 bg-indigo-50/5 h-full">
+        {/* 상단 락 장치 헤더 */}
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
+          <div className="flex items-center gap-2">
+            <Lock size={14} className="text-slate-400" />
+            <span className="text-xs font-bold text-slate-500">
+              ReadOnly Mode <span className="text-[10px] font-normal text-slate-400 ml-0.5">(과거 차수 조회)</span>
+            </span>
+          </div>
+          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
+            {mode === 'new' ? 'New Entry' : mode === 'fa' ? 'FA Entry' : mode === 'reopen' ? 'Re-Opened' : mode === 'carryover' ? 'Carry-over' : 'Evaluation'}
+          </span>
+        </div>
+
+        {/* 타이틀 및 차수 정보 */}
+        <div className="mb-5 shrink-0">
+          <div className="text-[10px] text-indigo-500 font-extrabold mb-0.5 tracking-widest uppercase">{formData.ipBlock || 'SYSTEM'} BLOCK</div>
+          <h2 className="text-xl font-black text-slate-800 tracking-tight flex flex-wrap items-center gap-2">
+            {mode === 'new' || mode === 'fa' 
+              ? `${formData.ipBlock}.${formData.issueNum || 'ISSUE'}`
+              : (formData.targetIssue || 'Selected Issue')
+            }
+            {formData.subBlock && (
+              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
+                {formData.subBlock}
+              </span>
+            )}
+          </h2>
+          <p className="text-[10px] text-slate-400 mt-1">조회 차수: <span className="font-semibold text-slate-600">{stage}</span></p>
+        </div>
+
+        {/* 2단 핵심 메타데이터 그리드 */}
+        <div className="grid grid-cols-2 gap-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100 mb-5 shrink-0">
+          <div>
+            <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Severity (심각도)</div>
+            <div className="text-xs font-extrabold text-slate-700 mt-0.5">
+              {formData.severity || 'N/A'}
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Disposition (처분)</div>
+            <div className="text-xs font-extrabold text-slate-700 mt-0.5">
+              <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px]">
+                {formData.disposition || 'N/A'}
+              </span>
+            </div>
+          </div>
+          {mode === 'eval' && (
+            <div className="col-span-2 border-t border-slate-200/50 pt-2.5 mt-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Assessment Result (평가 결과)</div>
+              <div className="text-xs font-extrabold text-blue-700 mt-0.5">
+                {formData.assessment || 'N/A'}
+              </div>
+            </div>
+          )}
+          {mode === 'carryover' && (
+            <div className="col-span-2 border-t border-slate-200/50 pt-2.5 mt-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Designer Action (이월 조치)</div>
+              <div className="text-xs font-extrabold text-purple-700 mt-0.5">
+                {formData.carryoverAction || 'N/A'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 서술형 리포트 항목들 */}
+        <div className="flex-1 space-y-4 overflow-y-auto pr-1 select-text">
+          
+          {/* Re-open Reason (재오픈 사유 - Re-open 모드일 때만) */}
+          {mode === 'reopen' && formData.reopenReason && (
+            <div className="space-y-1 bg-red-50/20 p-3 rounded-lg border border-red-100/30">
+              <div className="text-[10px] font-bold text-red-500 uppercase tracking-wider">
+                Re-open Reason (재오픈 사유)
+              </div>
+              <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-medium">
+                {formData.reopenReason}
+              </div>
+            </div>
+          )}
+
+          {/* Issue Type (이슈 종류 배지들) */}
+          {formData.types && formData.types.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Issue Type (이슈 유형)</div>
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {formData.types.map(t => (
+                  <span key={t} className="text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Latent Issue Details */}
+          {formData.types && formData.types.includes('Latent') && (formData.origin || formData.escapeReason) && (
+            <div className="bg-orange-50/30 border border-orange-100/40 rounded-xl p-3 space-y-2">
+              <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider flex items-center gap-1">
+                <AlertCircle size={11} />
+                <span>Latent Issue Details (잠재 이슈 분석)</span>
+              </div>
+              {formData.origin && (
+                <div className="text-xs">
+                  <span className="text-slate-400 font-semibold">Origin (기원 차수):</span>
+                  <span className="font-extrabold text-slate-700 ml-1.5">{formData.origin}</span>
+                </div>
+              )}
+              {formData.escapeReason && (
+                <div className="text-xs border-t border-orange-100/30 pt-2 mt-1">
+                  <span className="text-slate-400 font-semibold block mb-0.5">Reason for Escape (검증 누락 사유):</span>
+                  <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{formData.escapeReason}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Side Effect Details */}
+          {formData.types && formData.types.includes('Side effect') && formData.sideEffectSource && (
+            <div className="bg-purple-50/30 border border-purple-100/40 rounded-xl p-3 space-y-2">
+              <div className="text-[10px] font-bold text-purple-600 uppercase tracking-wider flex items-center gap-1">
+                <AlertCircle size={11} />
+                <span>Side Effect Details (사이드 이펙트 분석)</span>
+              </div>
+              <div className="text-xs">
+                <span className="text-slate-400 font-semibold">Source of Side Effect (원인 이슈):</span>
+                <span className="font-extrabold text-purple-800 ml-1.5">{formData.sideEffectSource}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Phenomenon (현상) / Evaluation Comment */}
+          {(formData.phenomenon || formData.comment) && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'eval' || mode === 'carryover' ? 'Comment (평가 의견 / 조치 사유)' : 'Phenomenon (현상)'}
+              </div>
+              <div className="text-xs text-slate-800 bg-slate-50/30 border border-slate-100 rounded-lg p-3 shadow-sm min-h-[42px] leading-relaxed whitespace-pre-wrap font-medium">
+                {formData.phenomenon || formData.comment || 'N/A'}
+              </div>
+            </div>
+          )}
+
+          {/* Root Cause (원인) */}
+          {formData.rootCause && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Root Cause (원인)</div>
+              <div className="text-xs text-slate-800 bg-slate-50/30 border border-slate-100 rounded-lg p-3 shadow-sm min-h-[42px] leading-relaxed whitespace-pre-wrap font-medium">
+                {formData.rootCause}
+              </div>
+            </div>
+          )}
+
+          {/* Justification / ModPlan (대책) */}
+          {(formData.justification || formData.modPlan) && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                {mode === 'carryover' && formData.carryoverAction === 'Revision' ? 'Modification Plan (새 대책 / 수정 내용)' : 'Justification (대책 및 타당성)'}
+              </div>
+              <div className="text-xs text-slate-800 bg-slate-50/30 border border-slate-100 rounded-lg p-3 shadow-sm min-h-[42px] leading-relaxed whitespace-pre-wrap font-medium">
+                {formData.justification || formData.modPlan}
+              </div>
+            </div>
+          )}
+
+          {/* Verification Gap */}
+          {(formData.verificationGap || formData.gapComment) && (
+            <div className="space-y-1 border-t border-slate-100 pt-3">
+              <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Verification Gap (검증 누락 분석)</div>
+              <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                <div>
+                  <span className="text-slate-400 font-semibold">Gap 카테고리:</span>
+                  <span className="font-extrabold text-slate-700 ml-1.5">{formData.verificationGap || 'N/A'}</span>
+                </div>
+                {formData.gapComment && (
+                  <div className="col-span-2 mt-1 bg-slate-50 p-2 rounded text-slate-600 font-medium">
+                    {formData.gapComment}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Defer / Carryover Action 세부 */}
+          {mode === 'eval' && formData.assessment === 'Deferred' && formData.deferReason && (
+            <div className="space-y-1 bg-blue-50/20 p-3 rounded-lg border border-blue-100/30">
+              <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Defer Reason (유보 사유)</div>
+              <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-medium">
+                {formData.deferReason}
+              </div>
+            </div>
+          )}
+
+          {/* Customer Alignment */}
+          {formData.customerAlignment && (
+            <div className="bg-indigo-50/20 border border-indigo-100/40 rounded-xl p-3.5 space-y-2">
+              <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                <FolderOpen size={11} className="text-indigo-500" />
+                <span>Customer Alignment (고객 협의 현황)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block">협의 상태:</span>
+                  <span className="font-extrabold text-indigo-950 mt-0.5 block">{formData.customerAlignment}</span>
+                </div>
+                {formData.customerReportType && formData.customerReportType !== 'N/A' && (
+                  <div>
+                    <span className="text-slate-400 font-semibold block">리포트 타입:</span>
+                    <span className="font-extrabold text-indigo-950 mt-0.5 block">{formData.customerReportType}</span>
+                  </div>
+                )}
+              </div>
+              {formData.customerFacingAttachments && (
+                <div className="text-[11px] border-t border-indigo-100/30 pt-2 mt-1">
+                  <span className="text-slate-400 font-semibold block">고객 리포트 문서 링크:</span>
+                  <a href={formData.customerFacingAttachments} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline break-all block mt-0.5">
+                    {formData.customerFacingAttachments}
+                  </a>
+                </div>
+              )}
+              {formData.sanitizedStory && (
+                <div className="text-[11px] border-t border-indigo-100/30 pt-2 mt-1">
+                  <span className="text-slate-400 font-semibold block">Sanitized Story (고객 제공용 사유):</span>
+                  <p className="text-slate-700 leading-relaxed font-medium mt-0.5 whitespace-pre-wrap">{formData.sanitizedStory}</p>
+                </div>
+              )}
+              {formData.customerAlignmentDetails && (
+                <div className="text-[11px] border-t border-indigo-100/30 pt-2 mt-1">
+                  <span className="text-slate-400 font-semibold block">협의 내용 요약:</span>
+                  <p className="text-slate-700 leading-relaxed font-medium mt-0.5 whitespace-pre-wrap">{formData.customerAlignmentDetails}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FA 연동 정보 */}
+          {formData.faId && (
+            <div className="flex items-center gap-2 bg-blue-50/50 border border-blue-200 rounded-lg px-3 py-2 text-[10px] font-bold text-blue-800">
+              <Link size={11} />
+              FA 연동 중: {formData.faId}
+            </div>
+          )}
+
+          {/* Assignee (담당자) */}
+          <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Assignee (담당자):</span>
+            <span className="text-xs font-extrabold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">
+              {formData.assignee || '미지정'}
+            </span>
+          </div>
+
+        </div>
+
+        {/* ───────── 하단 닫기 버튼 ───────── */}
+        <div className="flex items-center mt-5 pt-4 border-t border-gray-100 shrink-0">
+          <button
+            onClick={onCancel}
+            className="w-full py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 active:scale-[0.98] transition-all border border-slate-200 flex items-center justify-center gap-1.5"
+          >
+            <X size={15} />
+            닫기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`bg-white border border-slate-200 rounded-xl p-5 flex flex-col transition-all ${editingId && !isReadOnly ? 'ring-2 ring-blue-400' : ''} ${editingId && isReadOnly ? 'ring-2 ring-indigo-300 bg-indigo-50/10' : ''}`}>
+    <div className={`bg-white border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden transition-all ${editingId && !isReadOnly ? 'ring-2 ring-blue-400' : ''} ${editingId && isReadOnly ? 'ring-2 ring-indigo-300 bg-indigo-50/10' : ''}`}>
        {editingId && (
          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
            {isReadOnly ? (<><Edit2 size={14} className="text-slate-500" /><span className="text-sm font-bold text-slate-700">ReadOnly Mode <span className="text-xs font-normal text-slate-400 ml-1">(과거 차수 조회)</span></span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
@@ -196,7 +477,7 @@ export default function IssueForm({
          </button>
        )}
 
-      <fieldset disabled={isReadOnly} className="border-none p-0 m-0 flex-1">
+      <fieldset disabled={isReadOnly} className="border-none p-0 m-0 flex-1 min-w-0 overflow-hidden">
         {mode === 'reopen' ? (
           <div className="space-y-4">
             <div>
@@ -382,13 +663,22 @@ export default function IssueForm({
               </div>
             )}
             {formData.faId && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-300 rounded-lg px-3 py-2 text-xs font-bold text-blue-800">
-                <Link size={12}/>
-                FA 연동 중: {formData.faId}
-                {!isReadOnly && (
-                  <button onClick={onUnlinkFa} className="ml-auto text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-2 py-1 rounded shadow-sm text-[10px] transition-colors">연동 해제</button>
-                )}
-              </div>
+              (() => {
+                const isCurrentStage = !formData.stage || formData.stage === stage;
+                return (
+                  <div className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-xs font-bold ${
+                    isCurrentStage 
+                      ? 'bg-blue-50 border-blue-300 text-blue-800' 
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
+                  }`}>
+                    <Link size={12}/>
+                    FA 연동 정보: {formData.faId} {!isCurrentStage && " (이월 연동)"}
+                    {!isReadOnly && isCurrentStage && (
+                      <button onClick={onUnlinkFa} className="ml-auto text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-2 py-1 rounded shadow-sm text-[10px] transition-colors">연동 해제</button>
+                    )}
+                  </div>
+                );
+              })()
             )}
             <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}>{SEVERITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
             <div><label className={lc}>Phenomenon (현상)</label><textarea name="phenomenon" value={formData.phenomenon} onChange={handleInput} className={tc} rows="3"></textarea></div>
@@ -493,7 +783,14 @@ export default function IssueForm({
                     });
                     if (found) { originMeta = { ipBlock: found.ipBlock, severity: found.severity }; break; }
                   }
-                  const nextData = { ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage), targetIssue: v, assessment: 'Fixed', ...originMeta };
+                  const nextData = {
+                    ...makeDefaultForm(originMeta.ipBlock || currentSelectedIp, stage),
+                    entryMode: 'eval',
+                    targetIssue: v,
+                    assessment: '',
+                    comment: '',
+                    ...originMeta
+                  };
                   setFormData(nextData);
                   if (onChange) onChange(nextData);
                   if (onSetEditingId) onSetEditingId(null);
@@ -502,12 +799,12 @@ export default function IssueForm({
                 <option value="">이슈 선택...</option>
                 {sortedLoadedIssues.map(id => {
                   const isDone = issues.some(it => it.entryMode === 'eval' && it.targetIssue === id);
-                  return (<option key={id} value={id} style={isDone ? { color: '#1e40af', fontWeight: '700' } : { color: '#dc2626' }}>{isDone ? `🔵 [평가완료] ${id}` : `🔴 [평가대기] ${id}`}</option>);
+                  return (<option key={id} value={id} style={isDone ? { color: '#1e40af', fontWeight: '700' } : { color: '#dc2626' }}>{isDone ? `🔵 [판정완료] ${id}` : `🔴 [판정대기] ${id}`}</option>);
                 })}
               </select>
               {formData.targetIssue && renderHistoricalContext(formData.targetIssue)}
             </div>
-            <div><label className={lc}>Assessment Result</label><select name="assessment" value={formData.assessment} onChange={handleInput} className={`w-full font-bold ${ic}`}><option value="Fixed">Fixed (완전 해결)</option><option value="Partial">Partial (부분 개선)</option><option value="Unresolved">Unresolved (해결 안 됨)</option><option value="Deferred">🔵 Deferred — 유보</option></select></div>
+            <div><label className={lc}>Assessment Result</label><select name="assessment" value={formData.assessment || ''} onChange={handleInput} className={`w-full font-bold ${ic}`}><option value="">--- 결과 선택 ---</option><option value="Fixed">Fixed (완전 해결)</option><option value="Partial">Partial (부분 개선)</option><option value="Unresolved">Unresolved (해결 안 됨)</option><option value="Deferred">🔵 Deferred — 유보</option></select></div>
             <div><label className={lc}>Comment (평가 의견)</label><textarea name="comment" value={formData.comment} onChange={handleInput} className={tc} rows="2"></textarea></div>
             {formData.assessment === 'Deferred' && (
               <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-3">

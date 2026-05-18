@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-05-13T05:22:45.477Z",
+  "lastUpdated": "2026-05-17T04:22:48.719Z",
   "activeFeatures": [
     "ui-fragmentation",
     "workspace-fragmentation",
@@ -9,7 +9,9 @@
     "revision-log-stabilization",
     "revision-log-stabilization-v2",
     "unit-d-stability-security",
-    "bug-03-zombie-lock-fix"
+    "bug-03-zombie-lock-fix",
+    "tabs",
+    "components"
   ],
   "primaryFeature": "ui-fragmentation",
   "features": {
@@ -321,6 +323,18 @@
         "started": "2026-05-13T05:22:45.477Z",
         "lastUpdated": "2026-05-13T05:22:45.477Z"
       }
+    },
+    "tabs": {
+      "phase": "check",
+      "matchRate": null,
+      "iterationCount": 0,
+      "documents": {}
+    },
+    "components": {
+      "phase": "check",
+      "matchRate": null,
+      "iterationCount": 0,
+      "documents": {}
     }
   },
   "pipeline": {
@@ -331,7 +345,7 @@
   "session": {
     "startedAt": "2026-05-06T00:04:01.643Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-05-13T05:22:45.477Z"
+    "lastActivity": "2026-05-17T04:22:48.719Z"
   },
   "history": [
     {
@@ -565,6 +579,32 @@
       "phase": "design",
       "nextPhase": "do",
       "timestamp": "2026-05-08T05:07:01.383Z"
+    },
+    {
+      "feature": "tabs",
+      "from": "do",
+      "to": "check",
+      "timestamp": "2026-05-17T04:12:09.637Z"
+    },
+    {
+      "feature": "tabs",
+      "action": "phase_complete",
+      "phase": "do",
+      "nextPhase": "check",
+      "timestamp": "2026-05-17T04:12:09.638Z"
+    },
+    {
+      "feature": "components",
+      "from": "do",
+      "to": "check",
+      "timestamp": "2026-05-17T04:22:48.718Z"
+    },
+    {
+      "feature": "components",
+      "action": "phase_complete",
+      "phase": "do",
+      "nextPhase": "check",
+      "timestamp": "2026-05-17T04:22:48.719Z"
     }
   ]
 }

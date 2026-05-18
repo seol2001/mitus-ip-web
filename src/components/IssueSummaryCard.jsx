@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit2, Trash2, FolderOpen, User, Tag, Link } from 'lucide-react';
+import { Edit2, Trash2, ChevronDown, User, Tag, Link, Activity, ArrowRightCircle, ShieldCheck } from 'lucide-react';
 import { getIssueStatus } from '../logic/revisionLogLogic';
 
 export default React.memo(function IssueSummaryCard({
@@ -13,6 +13,7 @@ export default React.memo(function IssueSummaryCard({
   currentStage,
   historyStage,
   needsEval = false,
+  onShowHistoryReport,
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -124,7 +125,13 @@ export default React.memo(function IssueSummaryCard({
     return raw;
   })();
 
-  const previewText = cleanPhenomenon || item.comment || item.reopenReason || '';
+  const previewText = cleanPhenomenon 
+    ? cleanPhenomenon 
+    : item.comment 
+      ? `[Comment] ${item.comment}`
+      : item.reopenReason 
+        ? `[Re-open Reason] ${item.reopenReason}`
+        : '';
 
   const getColorBar = () => {
     if (item.entryMode === 'carryover') {
@@ -199,10 +206,17 @@ export default React.memo(function IssueSummaryCard({
 
             {/* FA 메타 정보 전용 UI */}
             {(item.faReportId || item.faId) && (
-              <div className="flex items-center gap-1.5 mb-1.5 text-[11px] text-blue-600 font-medium">
-                <Link size={10} className="shrink-0" />
-                <span>FA: {item.faReportId || item.faId}{item.faCustomer ? ` · ${item.faCustomer}` : ''}</span>
-              </div>
+              (() => {
+                const isCurrentStage = !item.stage || item.stage === currentStage;
+                return (
+                  <div className={`flex items-center gap-1.5 mb-1.5 text-[11px] font-medium ${
+                    isCurrentStage ? 'text-amber-600' : 'text-slate-400'
+                  }`}>
+                    <Link size={10} className="shrink-0" />
+                    <span>FA: {item.faReportId || item.faId}{item.faCustomer ? ` · ${item.faCustomer}` : ''} {!isCurrentStage && "(이월 연동)"}</span>
+                  </div>
+                );
+              })()
             )}
 
             {(item.assignee || item.types?.length > 0) && (
@@ -243,15 +257,41 @@ export default React.memo(function IssueSummaryCard({
           </div>
 
           <div className="flex items-center gap-0.5 shrink-0 ml-1 mt-0.5">
-            {/* 평가 필요 뱃지 */}
+            {/* 판정 대기 뱃지 */}
             {needsEval && (
               <span
                 onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
-                className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full shadow-sm animate-pulse cursor-pointer select-none mr-1"
-                title="평가 필요: 클릭하여 평가 입력"
+                className="flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full shadow-sm cursor-pointer select-none mr-1 transition-all hover:bg-amber-100"
+                title="이월 검토 판정 대기: 클릭하여 평가 입력"
               >
-                🚨 평가 필요
+                <ArrowRightCircle size={11} className="shrink-0" />
+                <span>판정 대기</span>
               </span>
+            )}
+            {/* 유지 심사 뱃지 */}
+            {!needsEval && item.entryMode === 'carryover' && (
+              <span
+                onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
+                className="flex items-center gap-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full shadow-sm cursor-pointer select-none mr-1 transition-all hover:bg-indigo-100"
+                title="관리형 부채 유지 심사: 클릭하여 상태 검토"
+              >
+                <ShieldCheck size={11} className="shrink-0" />
+                <span>유지 심사</span>
+              </span>
+            )}
+            {onShowHistoryReport && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShowHistoryReport(issueId);
+                }}
+                className="flex items-center gap-1 bg-blue-50/50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md border border-blue-200/60 text-[10px] font-bold transition-all shadow-sm shrink-0 select-none mr-1 hover:scale-105 active:scale-95 duration-150"
+                title="이슈 과거 변경 이력 리포트 보기"
+              >
+                <Activity size={11} className="animate-pulse" />
+                <span>이력 보기</span>
+              </button>
             )}
             {/* 편집 모드: 수정 / 삭제 버튼 (이벤트 버블링 방지 필수) */}
             {showActions && (
@@ -273,7 +313,7 @@ export default React.memo(function IssueSummaryCard({
               </>
             )}
             {expandable && (
-              <FolderOpen size={14} className={`text-gray-400 transition-transform ml-1 ${expanded ? 'rotate-180' : ''}`} />
+              <ChevronDown size={14} className={`text-gray-400 transition-transform ml-1 ${expanded ? 'rotate-180' : ''}`} />
             )}
           </div>
         </div>
@@ -288,8 +328,8 @@ export default React.memo(function IssueSummaryCard({
              {item.gapComment && <div><span className="font-bold text-gray-800">Gap Comment: </span><span className="whitespace-pre-wrap font-bold text-gray-900">{item.gapComment}</span></div>}
              {item.modPlan && <div><span className="font-semibold text-gray-700">Mod Plan: </span><span className="whitespace-pre-wrap">{item.modPlan}</span></div>}
              {item.justification && <div><span className="font-semibold text-gray-700">Justification: </span><span className="whitespace-pre-wrap">{item.justification}</span></div>}
-             {item.entryMode === 'eval' && item.comment && <div><span className="font-semibold text-gray-700">Comment: </span><span className="whitespace-pre-wrap">{item.comment}</span></div>}
-             {item.entryMode === 'reopen' && item.reopenReason && <div><span className="font-semibold text-red-600">Re-open Reason: </span><span className="whitespace-pre-wrap">{item.reopenReason}</span></div>}
+             {item.comment && <div><span className="font-semibold text-gray-700">Comment: </span><span className="whitespace-pre-wrap">{item.comment}</span></div>}
+             {item.reopenReason && <div><span className="font-semibold text-red-600">Re-open Reason: </span><span className="whitespace-pre-wrap">{item.reopenReason}</span></div>}
              {item.entryMode === 'carryover' && item.carryoverAction && <div><span className="font-semibold text-purple-700">Carryover Action: </span><span className="font-bold">{item.carryoverAction}</span></div>}
           </div>
         </div>

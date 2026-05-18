@@ -40,6 +40,13 @@ export const getIssueStatus = (item) => {
   }
 
   // 4. 신규(new) / FA(fa) 모드
+  if (item.entryMode === 'new' || item.entryMode === 'fa') {
+    const disp = item.disposition;
+    if (disp === 'Acceptable' || disp === 'Waived' || disp === 'Closed') {
+      return 'CLOSED';
+  }
+  }
+
   return 'OPEN';
 };
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, Settings, Download, Edit3, Copy, Archive, ArchiveRestore, Trash2, History, ChevronDown, Unlock as UnlockIcon, Cpu, AlertCircle, Link2 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
+import { getIssueStatus } from '../../logic/revisionLogLogic';
 
 const ProjectCard = React.memo(({
   project,
@@ -80,26 +81,49 @@ const ProjectCard = React.memo(({
       : (revisionData.ipIndex ? Object.keys(revisionData.ipIndex) : []);
     const ipCount = ipBlocks.length;
     
-    // 2. 이슈 수 계산 (전체 이슈 및 미해결 Open 이슈 개수)
+    // 2. 최신 이슈 상태 맵 도출 (historyBlocks와 issues를 모두 누적 및 최신 갱신하여 덮어씀)
     const issues = revisionData.revisionLog?.issues || [];
-    const totalIssues = issues.length;
-    const openIssues = issues.filter(issue => issue.assessment !== 'Fixed').length;
+    const historyBlocks = revisionData.revisionLog?.historyBlocks || [];
+    const projectName = revisionData.projectOverview?.Project_Name || project.name || 'Proj';
     
-    // 3. IP별 미해결 잔여 이슈 개수 매핑 계산
+    const latestIssueStates = {};
+    const allHistoricalIssues = [...historyBlocks].flatMap(b => b.issues || []);
+    
+    [...allHistoricalIssues, ...issues].forEach(item => {
+      if (!item) return;
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      const id = isNewLike 
+        ? `${item.ipBlock}.${projectName}.${item.issueNum}` 
+        : item?.targetIssue;
+      if (id) latestIssueStates[id] = item;
+    });
+
+    // 3. 이슈 개수 계산 (getIssueStatus를 이용한 정교한 판정)
+    // - totalIssues: latestIssueStates의 전체 고유 이슈 개수
+    // - openIssues: getIssueStatus(item) === 'OPEN'인 미해결 기술 부채 개수
+    let totalIssues = 0;
+    let openIssues = 0;
+    
     const ipOpenIssuesMap = {};
     ipBlocks.forEach(ip => {
       ipOpenIssuesMap[ip] = 0;
     });
     
-    issues.forEach(issue => {
-      const isOpen = issue.assessment !== 'Fixed';
+    Object.values(latestIssueStates).forEach(item => {
+      totalIssues++;
+      
+      const status = getIssueStatus(item);
+      const isOpen = status === 'OPEN';
+      
       if (isOpen) {
-        let ipName = issue.ipBlock;
-        if (!ipName && issue.targetIssue) {
-          ipName = issue.targetIssue.split('.')[0];
-        }
+        openIssues++;
+        
+        const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+        let ipName = isNewLike 
+          ? item.ipBlock 
+          : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+          
         if (ipName) {
-          // 대소문자 유연하게 대응하여 선언된 IP 목록에 매핑
           const matchedIp = ipBlocks.find(ip => ip.toLowerCase() === ipName.toLowerCase());
           if (matchedIp) {
             ipOpenIssuesMap[matchedIp] += 1;
@@ -119,7 +143,7 @@ const ProjectCard = React.memo(({
       ipOpenIssuesMap,
       faCount
     };
-  }, [project.latest_evt, project.project_data]);
+  }, [project.latest_evt, project.project_data, project.name]);
 
   return (
     <div

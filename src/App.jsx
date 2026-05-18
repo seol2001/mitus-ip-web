@@ -1524,8 +1524,9 @@ function App() {
       };
 
       // ─── [V1.4.5] 강력한 Deep Replace 로직 (ID 정합성 자가 치유) ───
-      const targetId = mode === 'new' ? newId : incoming.id;
-      const targetName = mode === 'new' ? newName : (incoming.name || incoming.id);
+      const existingProject = importModalData.existingProject;
+      const targetId = mode === 'new' ? newId : (existingProject?.id || incoming.id);
+      const targetName = mode === 'new' ? newName : (existingProject?.name || existingProject?.id || incoming.name || incoming.id);
 
       const oldId = incoming.id;
       const oldName = incoming.name || incoming.id;
@@ -1534,9 +1535,9 @@ function App() {
 
       // 1. ID 치환 (standalone 및 embedded 패턴 모두 대응)
       if (oldId !== targetId) {
-        // "SM5720" -> "SM5720_MOCK" (필드 값)
+        // "SM5720_MOCK" -> "SMMOCK" (필드 값)
         jsonStr = jsonStr.split(`"${oldId}"`).join(`"${targetId}"`);
-        // .SM5720. -> .SM5720_MOCK. (이슈 ID 중간값: Buck.SM5720.ISSUE#1 대응)
+        // .SM5720_MOCK. -> .SMMOCK. (이슈 ID 중간값: Buck.SM5720_MOCK.ISSUE#1 대응)
         jsonStr = jsonStr.split(`.${oldId}.`).join(`.${targetId}.`);
       }
 
@@ -1563,7 +1564,7 @@ function App() {
             const backupEntries = [];
 
             const updatedList = prev.map(p => {
-              if (p.id !== incoming.id) return p;
+              if (p.id !== targetId) return p;
 
               // 🛡️ 안정성: 백업 생성 (Snapshot) - Factory Function 사용
               if (useBackup) {
@@ -1609,7 +1610,7 @@ function App() {
           if (error) throw error;
         }
         else if (mode === 'merge') {
-          const existing = projectsList.find(p => p.id === incoming.id);
+          const existing = projectsList.find(p => p.id === targetId);
 
           // 1. 전체 프로젝트 백업 (Snapshot) - Factory Function 사용
           if (useBackup && existing) {
@@ -1638,7 +1639,7 @@ function App() {
           const updatedPhases = Array.from(new Set([...existing.phases, ...phasesToAdd]));
 
           // 3. [27b 권고] Optimistic Update: API 호출 전 로컬 상태 즉시 반영
-          setProjectsList(prev => prev.map(p => p.id === incoming.id ? {
+          setProjectsList(prev => prev.map(p => p.id === targetId ? {
             ...p,
             phases: updatedPhases,
             project_data: { ...existing.project_data, revisions: mergedRevisions },
@@ -1646,7 +1647,7 @@ function App() {
           } : p));
 
           // 4. DB 저장 (phases 포함)
-          const { error } = await projectService.updateProject(incoming.id, {
+          const { error } = await projectService.updateProject(targetId, {
             phases: updatedPhases,
             project_data: { ...existing.project_data, revisions: mergedRevisions },
             updated: new Date().toISOString()
@@ -1654,7 +1655,7 @@ function App() {
 
           // 5. [27b 권고] DB 실패 시 롤백 (잠금 권한 없음 포함)
           if (error) {
-            setProjectsList(prev => prev.map(p => p.id === incoming.id ? existing : p));
+            setProjectsList(prev => prev.map(p => p.id === targetId ? existing : p));
             throw error;
           }
         }

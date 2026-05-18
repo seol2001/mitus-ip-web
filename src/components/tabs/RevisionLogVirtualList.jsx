@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { ChevronDown, ChevronRight, AlertCircle, Plus, Activity, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertCircle, Sparkles, Activity, CheckCircle, Clock, ArrowRightCircle, ShieldCheck } from 'lucide-react';
 import IssueSummaryCard from '../IssueSummaryCard';
 import { getIssueStatus } from '../../logic/revisionLogLogic';
 
@@ -29,6 +29,7 @@ const SectionHeader = ({ section, title, icon, count, colorClass, textColorClass
 const RevisionLogVirtualList = ({
   issues,
   safeData,
+  onShowHistoryReport,
   project,
   ipDropdown,
   statusFilter,
@@ -39,7 +40,8 @@ const RevisionLogVirtualList = ({
   isReadOnly,
   editingId,
   stage,
-  handlers
+  handlers,
+  latestIssueStates
 }) => {
   const [expandedItems, setExpandedItems] = useState({});
   const [expandedSections, setExpandedSections] = useState({
@@ -47,6 +49,7 @@ const RevisionLogVirtualList = ({
     newFindings: true,
     stillOpen: true,
     resolved: false,
+    deferred: true,
   });
 
   const toggleSection = useCallback((key) => {
@@ -75,7 +78,8 @@ const RevisionLogVirtualList = ({
     pendingCarryoverItems,
     newFindings,
     stillOpenIssues,
-    resolvedDeferredIssues,
+    resolvedIssues,
+    deferredIssues,
   } = useMemo(() => {
     const actedThisStage = {};
     (issues || []).forEach(i => {
@@ -107,29 +111,99 @@ const RevisionLogVirtualList = ({
         if (i.entryMode === 'new' || i.entryMode === 'fa') return (i.ipBlock || '') === ipDropdown;
         const ipFromTarget = i.targetIssue ? i.targetIssue.split('.')[0] : '';
         return ipFromTarget === ipDropdown;
-      })
-      .filter(i => {
-        if (statusFilter === 'ALL') return true;
-        const st = getIssueStatus(i);
-        if (statusFilter === 'OPEN' && st === 'OPEN') return true;
-        if (statusFilter === 'DEF' && st === 'DEFERRED') return true;
-        if (statusFilter === 'CLOSED' && st === 'CLOSED') return true;
+      });
+
+    // ── [정합성 설계] 이슈 종결(CLOSED) 추출 ──
+    const allResolved = Object.values(latestIssueStates || {})
+      .filter(item => {
+        // IP 필터링
+        const ip = item.entryMode === 'new' || item.entryMode === 'fa'
+          ? item.ipBlock
+          : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+        if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
+
+        // 상태 필터링 (최종 상태가 CLOSED인 것)
+        const st = getIssueStatus(item);
+        if (statusFilter === 'ALL' || statusFilter === 'CLOSED') return st === 'CLOSED';
         return false;
       });
+
+    // ── [정합성 설계] 평가 유보(DEFERRED) 이슈 추출 (현재 차수에서 선언된 것만) ──
+    const allDeferred = Object.values(latestIssueStates || {})
+      .filter(item => {
+        // IP 필터링
+        const ip = item.entryMode === 'new' || item.entryMode === 'fa'
+          ? item.ipBlock
+          : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+        if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
+        
+        // 차수(Stage) 필터링: 현재 차수에서 직접 유보된 건만 노출
+        const isCurrentStage = !item.stage || item.stage === stage;
+        if (!isCurrentStage) return false;
+
+        // 상태 필터링 (최종 상태가 DEFERRED인 것)
+        const st = getIssueStatus(item);
+        if (statusFilter === 'ALL' || statusFilter === 'DEF') return st === 'DEFERRED';
+        return false;
+      });
+
+    const sortFn = (a, b) => {
+      const isNewLike = (m) => m === 'new' || m === 'fa';
+      const idA = isNewLike(a?.entryMode) ? `${a?.ipBlock}.${project}.${a?.issueNum}` : a?.targetIssue;
+      const idB = isNewLike(b?.entryMode) ? `${b?.ipBlock}.${project}.${b?.issueNum}` : b?.targetIssue;
+      return (idA || '').localeCompare(idB || '');
+    };
+
+    allResolved.sort(sortFn);
+    allDeferred.sort(sortFn);
+
+    // ── [정합성 설계] 관리 중인 기술 부채는 현재 차점 기준 OPEN 상태인 모든 누적 이슈에서 추출 (전체 이력 누적 및 중복 제거) ──
+    const allStillOpen = Object.values(latestIssueStates || {})
+      .filter(item => {
+        // IP 필터링
+        const ip = item.entryMode === 'new' || item.entryMode === 'fa'
+          ? item.ipBlock
+          : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+        if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
+        
+        // 상태 필터링 (최종 상태가 OPEN인 것)
+        const st = getIssueStatus(item);
+        if (st !== 'OPEN') return false;
+        if (statusFilter !== 'ALL' && statusFilter !== 'OPEN') return false;
+
+        const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+        const id = isNewLike ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+
+        // [중복 제거 1] 이전 차수 이월이고 현재 차수 미평가 상태인 건은 '조치 필요'에 뜨므로 제외
+        const isPendingCarryover = (carryoverCandidateSet[id] || needsEvalSet[id]) && !actedThisStage[id];
+        if (isPendingCarryover) return false;
+
+        // [중복 제거 2] 이번 차수 신규 오픈 건도 '조치 필요'에 뜨므로 제외
+        const isNewFinding = isNewLike && item.stage === stage;
+        if (isNewFinding) return false;
+
+        return true;
+      });
+
+    // ID 순으로 정렬
+    allStillOpen.sort((a, b) => {
+      const isNewLike = (m) => m === 'new' || m === 'fa';
+      const idA = isNewLike(a?.entryMode) ? `${a?.ipBlock}.${project}.${a?.issueNum}` : a?.targetIssue;
+      const idB = isNewLike(b?.entryMode) ? `${b?.ipBlock}.${project}.${b?.issueNum}` : b?.targetIssue;
+      return (idA || '').localeCompare(idB || '');
+    });
 
     return {
       pendingEvalItems,
       pendingCarryoverItems,
       newFindings: curFiltered.filter(item => getIssueStatus(item) === 'OPEN' && (item.entryMode === 'new' || item.entryMode === 'fa')),
-      stillOpenIssues: curFiltered.filter(item => getIssueStatus(item) === 'OPEN' && item.entryMode !== 'new' && item.entryMode !== 'fa'),
-      resolvedDeferredIssues: curFiltered.filter(item => {
-        const st = getIssueStatus(item);
-        return st === 'CLOSED' || st === 'DEFERRED';
-      }),
+      stillOpenIssues: allStillOpen,
+      resolvedIssues: allResolved,
+      deferredIssues: allDeferred,
     };
-  }, [issues, safeData, project, ipDropdown, statusFilter, needsEvalSet, carryoverCandidateSet, sortedIssues]);
+  }, [issues, safeData, project, ipDropdown, statusFilter, needsEvalSet, carryoverCandidateSet, sortedIssues, latestIssueStates, stage]);
 
-  const hasAny = pendingEvalItems.length + pendingCarryoverItems.length + newFindings.length + stillOpenIssues.length + resolvedDeferredIssues.length > 0;
+  const hasAny = pendingEvalItems.length + pendingCarryoverItems.length + newFindings.length + stillOpenIssues.length + resolvedIssues.length + deferredIssues.length > 0;
 
   if (!hasAny) {
     return (
@@ -142,70 +216,65 @@ const RevisionLogVirtualList = ({
   const resolvedHandlers = {
     ...handlers,
     toggleSection,
-    expandedSections,
+    toggleExpand,
   };
 
   return (
-    <div className="flex flex-col gap-7">
-
-      {/* Section 1: ACTION REQUIRED */}
-      {(pendingEvalItems.length + pendingCarryoverItems.length) > 0 && (
-        <div>
+    <div className="space-y-4">
+      {/* 1. 이월 검토 항목 (Pending Evaluation / Carryover) */}
+      {(pendingEvalItems.length > 0 || pendingCarryoverItems.length > 0) && (
+        <div className="bg-amber-50/10 border border-amber-100 rounded-xl p-4">
           <SectionHeader
             section="actionRequired"
-            title="조치 필요 항목"
-            icon={<AlertCircle size={15} />}
+            title="이월 검토 항목"
+            icon={<ArrowRightCircle size={15} />}
             count={pendingEvalItems.length + pendingCarryoverItems.length}
-            colorClass="border-red-100 bg-red-50/20 hover:bg-red-50/50"
-            textColorClass="text-red-600"
-            iconColorClass="text-red-400 group-hover:text-red-600"
-            badgeClass="text-red-600 bg-red-50/80"
+            colorClass="border-amber-100 bg-amber-50/20 hover:bg-amber-50/50"
+            textColorClass="text-amber-700"
+            iconColorClass="text-amber-400 group-hover:text-amber-700"
+            badgeClass="text-amber-700 bg-amber-50/80"
             isExpanded={expandedSections.actionRequired}
             onToggle={toggleSection}
           />
           {expandedSections.actionRequired && (
             <div className="space-y-2 mt-2">
               {pendingEvalItems.map(id => {
-                const originItem = findOriginItem(id);
-                const virtualItem = originItem
-                  ? { ...originItem, id: `pending-eval-${id}`, _isPendingEval: true }
-                  : { id: `pending-eval-${id}`, entryMode: 'new', ipBlock: id.split('.')[0], issueNum: id.split('#')[1] ? `ISSUE#${id.split('#')[1]}` : id, _isPendingEval: true };
+                const item = findOriginItem(id);
+                if (!item) return null;
                 return (
                   <IssueSummaryCard
-                    key={virtualItem.id}
-                    item={virtualItem}
+                    key={id}
+                    item={item}
                     project={project}
-                    isReadOnly={true}
+                    isReadOnly={isReadOnly}
                     editingId={editingId}
-                    onEdit={handlers.handleHistoryCardClick}
+                    onEdit={() => handlers.handleHistoryCardClick(item)}
                     currentStage={stage}
-                    historyStage={historyBlocks?.[historyBlocks.length - 1]?.stageName}
                     needsEval={true}
                     expandable={true}
-                    expanded={!!expandedItems[virtualItem.id]}
-                    onToggleExpand={() => toggleExpand(virtualItem.id)}
+                    expanded={!!expandedItems[item.id]}
+                    onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
                   />
                 );
               })}
               {pendingCarryoverItems.map(id => {
-                const originItem = findOriginItem(id);
-                const coVirtual = originItem
-                  ? { ...originItem, id: `pending-co-${id}`, _isCarryover: true }
-                  : { id: `pending-co-${id}`, entryMode: 'new', ipBlock: id.split('.')[0], issueNum: id.split('#')[1] ? `ISSUE#${id.split('#')[1]}` : id, _isCarryover: true };
+                const item = findOriginItem(id);
+                if (!item) return null;
                 return (
                   <IssueSummaryCard
-                    key={coVirtual.id}
-                    item={coVirtual}
+                    key={id}
+                    item={item}
                     project={project}
-                    isReadOnly={true}
+                    isReadOnly={isReadOnly}
                     editingId={editingId}
-                    onEdit={handlers.handleHistoryCardClick}
+                    onEdit={() => handlers.handleHistoryCardClick(item)}
                     currentStage={stage}
-                    historyStage={historyBlocks?.[historyBlocks.length - 1]?.stageName}
-                    needsEval={false}
+                    needsEval={true}
                     expandable={true}
-                    expanded={!!expandedItems[coVirtual.id]}
-                    onToggleExpand={() => toggleExpand(coVirtual.id)}
+                    expanded={!!expandedItems[item.id]}
+                    onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
                   />
                 );
               })}
@@ -214,59 +283,57 @@ const RevisionLogVirtualList = ({
         </div>
       )}
 
-      {/* Section 2: NEW FINDINGS */}
+      {/* 2. 신규 등록 리스트 */}
       {newFindings.length > 0 && (
-        <div>
+        <div className="bg-indigo-50/10 border border-indigo-100 rounded-xl p-4">
           <SectionHeader
             section="newFindings"
             title="신규 등록 리스트"
-            icon={<Plus size={15} />}
+            icon={<Sparkles size={15} />}
             count={newFindings.length}
-            colorClass="border-blue-100 bg-blue-50/20 hover:bg-blue-50/50"
-            textColorClass="text-blue-700"
-            iconColorClass="text-blue-400 group-hover:text-blue-700"
-            badgeClass="text-blue-700 bg-blue-50/80"
+            colorClass="border-indigo-100 bg-indigo-50/20 hover:bg-indigo-50/50"
+            textColorClass="text-indigo-700"
+            iconColorClass="text-indigo-400 group-hover:text-indigo-700"
+            badgeClass="text-indigo-700 bg-indigo-50/80"
             isExpanded={expandedSections.newFindings}
             onToggle={toggleSection}
           />
           {expandedSections.newFindings && (
             <div className="space-y-2 mt-2">
-              {newFindings.map(item => {
-                const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-                return (
-                  <IssueSummaryCard
-                    key={item.id}
-                    item={item}
-                    project={project}
-                    isReadOnly={isReadOnly}
-                    editingId={editingId}
-                    onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
-                    onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
-                    currentStage={stage}
-                    needsEval={!!needsEvalSet[itemIssueId]}
-                    expandable={true}
-                    expanded={!!expandedItems[item.id]}
-                    onToggleExpand={() => toggleExpand(item.id)}
-                  />
-                );
-              })}
+              {newFindings.map(item => (
+                <IssueSummaryCard
+                  key={item.id}
+                  item={item}
+                  project={project}
+                  isReadOnly={isReadOnly}
+                  editingId={editingId}
+                  onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
+                  onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
+                  currentStage={stage}
+                  needsEval={false}
+                  expandable={true}
+                  expanded={!!expandedItems[item.id]}
+                  onToggleExpand={() => toggleExpand(item.id)}
+                  onShowHistoryReport={onShowHistoryReport}
+                />
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {/* Section 3: STILL OPEN */}
+      {/* 3. 관리형 부채 */}
       {stillOpenIssues.length > 0 && (
-        <div>
+        <div className="bg-indigo-50/10 border border-indigo-100 rounded-xl p-4">
           <SectionHeader
             section="stillOpen"
-            title="관리 중인 기술 부채"
-            icon={<Activity size={15} />}
+            title="관리형 부채"
+            icon={<ShieldCheck size={15} />}
             count={stillOpenIssues.length}
-            colorClass="border-orange-200 bg-orange-50/20 hover:bg-orange-50/50"
-            textColorClass="text-orange-700"
-            iconColorClass="text-orange-400 group-hover:text-orange-700"
-            badgeClass="text-orange-700 bg-orange-50/80"
+            colorClass="border-indigo-100 bg-indigo-50/20 hover:bg-indigo-50/50"
+            textColorClass="text-indigo-700"
+            iconColorClass="text-indigo-400 group-hover:text-indigo-700"
+            badgeClass="text-indigo-700 bg-indigo-50/80"
             isExpanded={expandedSections.stillOpen}
             onToggle={toggleSection}
           />
@@ -274,20 +341,22 @@ const RevisionLogVirtualList = ({
             <div className="space-y-2 mt-2">
               {stillOpenIssues.map(item => {
                 const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
                 return (
                   <IssueSummaryCard
                     key={item.id}
                     item={item}
                     project={project}
-                    isReadOnly={isReadOnly}
+                    isReadOnly={isItemReadOnly}
                     editingId={editingId}
-                    onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
-                    onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
+                    onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
+                    onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
-                    needsEval={!!needsEvalSet[itemIssueId]}
+                    needsEval={false}
                     expandable={true}
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
                   />
                 );
               })}
@@ -296,39 +365,84 @@ const RevisionLogVirtualList = ({
         </div>
       )}
 
-      {/* Section 4: RESOLVED / DEFERRED */}
-      {resolvedDeferredIssues.length > 0 && (
-        <div>
+      {/* 4. 평가 유보 (Deferred) */}
+      {deferredIssues.length > 0 && (
+        <div className="bg-blue-50/10 border border-blue-100 rounded-xl p-4">
           <SectionHeader
-            section="resolved"
-            title="조치 완료 및 유보"
-            icon={<CheckCircle size={15} />}
-            count={resolvedDeferredIssues.length}
-            colorClass="border-gray-200 bg-gray-50/50 hover:bg-gray-100/50 opacity-80 hover:opacity-100"
-            textColorClass="text-gray-600"
-            iconColorClass="text-gray-400 group-hover:text-gray-600"
-            badgeClass="text-gray-600 bg-gray-100/80"
-            isExpanded={expandedSections.resolved}
+            section="deferred"
+            title="평가 유보 (Deferred)"
+            icon={<Clock size={15} />}
+            count={deferredIssues.length}
+            colorClass="border-blue-100 bg-blue-50/20 hover:bg-blue-50/50"
+            textColorClass="text-blue-700"
+            iconColorClass="text-blue-400 group-hover:text-blue-700"
+            badgeClass="text-blue-700 bg-blue-50/80"
+            isExpanded={expandedSections.deferred}
             onToggle={toggleSection}
           />
-          {expandedSections.resolved && (
+          {expandedSections.deferred && (
             <div className="space-y-2 mt-2">
-              {resolvedDeferredIssues.map(item => {
+              {deferredIssues.map(item => {
                 const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
                 return (
                   <IssueSummaryCard
                     key={item.id}
                     item={item}
                     project={project}
-                    isReadOnly={isReadOnly}
+                    isReadOnly={isItemReadOnly}
                     editingId={editingId}
-                    onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
-                    onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
+                    onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
+                    onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
                     needsEval={!!needsEvalSet[itemIssueId]}
                     expandable={true}
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. 종결 (Closed) */}
+      {resolvedIssues.length > 0 && (
+        <div className="bg-green-50/10 border border-green-100 rounded-xl p-4">
+          <SectionHeader
+            section="resolved"
+            title="종결 (Closed)"
+            icon={<CheckCircle size={15} />}
+            count={resolvedIssues.length}
+            colorClass="border-green-100 bg-green-50/20 hover:bg-green-50/50"
+            textColorClass="text-green-700"
+            iconColorClass="text-green-400 group-hover:text-green-700"
+            badgeClass="text-green-700 bg-green-50/80"
+            isExpanded={expandedSections.resolved}
+            onToggle={toggleSection}
+          />
+          {expandedSections.resolved && (
+            <div className="space-y-2 mt-2">
+              {resolvedIssues.map(item => {
+                const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
+                return (
+                  <IssueSummaryCard
+                    key={item.id}
+                    item={item}
+                    project={project}
+                    isReadOnly={isItemReadOnly}
+                    editingId={editingId}
+                    onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
+                    onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
+                    currentStage={stage}
+                    needsEval={!!needsEvalSet[itemIssueId]}
+                    expandable={true}
+                    expanded={!!expandedItems[item.id]}
+                    onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
                   />
                 );
               })}

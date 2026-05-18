@@ -42,7 +42,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
   const { 
     latestIssueStates, stats, sortedIssues, issues, historyBlocks 
-  } = useLogData(safeData, ipDropdown, validIps, project);
+  } = useLogData(safeData, ipDropdown, validIps, project, stage);
 
   const { 
     formData, editingId, isDirtyRef, formResetKey,
@@ -68,6 +68,11 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const [historyTargetId, setHistoryTargetId] = useState('');
   const [pullFaModalOpen, setPullFaModalOpen] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  const handleShowHistoryReport = useCallback((issueId) => {
+    setHistoryTargetId(issueId);
+    setHistoryModalOpen(true);
+  }, []);
 
   const [isTabEditing, setIsTabEditing] = useState(false);
   const isReadOnly = isArchived || !isTabEditing;
@@ -320,18 +325,20 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
 
   const handleEdit = useCallback((item) => {
-    setMode(item.faId ? 'fa' : item.entryMode);
+    const isCurrentStage = !item.stage || item.stage === stage;
+    setMode((item.faId && isCurrentStage) ? 'fa' : item.entryMode);
     setEditingId(item.id);
     initialFormDataRef.current = { ...item };
     setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData]);
+  }, [setMode, setEditingId, setFormData, stage]);
 
   const handleView = useCallback((item) => {
-    setMode(item.faId ? 'fa' : item.entryMode);
+    const isCurrentStage = !item.stage || item.stage === stage;
+    setMode((item.faId && isCurrentStage) ? 'fa' : item.entryMode);
     setEditingId(item.id);
     initialFormDataRef.current = { ...item };
     setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData]);
+  }, [setMode, setEditingId, setFormData, stage]);
 
   const handleHistoryCardClick = useCallback((item) => {
     const issueId = item.entryMode === 'new'
@@ -408,12 +415,15 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     // [보안 가드] 삭제 작업도 executeSafe로 관리
     await executeSafe(async (signal) => {
       const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
+      // 🚨 [보안/정합성] 이전 차수에서 연동되어 이월된 이슈는 이번 차수에서 'FA 연동 해제'를 시도할 수 없음!
+      const isCurrentStage = !item.stage || item.stage === stage;
+      const isFaLinkDeletable = item.faId && isCurrentStage;
 
       const confirmed = await showConfirm({
-        title: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
-        message: item.faId ? "연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?" : (isSpecialMode ? "평가 및 대응 방안을 초기화하시겠습니까?" : "등록된 신규 이슈를 삭제하시겠습니까?"),
+        title: isFaLinkDeletable ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
+        message: isFaLinkDeletable ? "연동을 해제하고 FA 리포트를 미연동 상태로 되돌리시겠습니까?" : (isSpecialMode ? "평가 및 대응 방안을 초기화하시겠습니까?" : "등록된 신규 이슈를 삭제하시겠습니까?"),
         type: "danger",
-        confirmText: item.faId ? "FA 연동 해제" : (isSpecialMode ? "조치 초기화" : "완전 삭제")
+        confirmText: isFaLinkDeletable ? "FA 연동 해제" : (isSpecialMode ? "조치 초기화" : "완전 삭제")
       });
 
       if (confirmed) {
@@ -421,14 +431,15 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         
         if (onSubmit) await onSubmit({ ...safeData, issues: newIssues }, signal);
         
-        if (item.faId) {
+        // 이번 차수에서 새로 등록된 FA 연동 건만 실제 미연동 상태로 복귀시킴
+        if (isFaLinkDeletable) {
           markFaLinkState(item.faId, false);
         }
         
         if (editingId === item.id) cancelEdit(true);
       }
     });
-  }, [showConfirm, project, issues, onSubmit, safeData, markFaLinkState, editingId, cancelEdit, executeSafe]);
+  }, [showConfirm, project, issues, onSubmit, safeData, markFaLinkState, editingId, cancelEdit, executeSafe, stage]);
 
 
   const confirmAssigneeChange = () => {
@@ -440,7 +451,27 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   };
 
 
-  const handleLock = () => {
+  const handleLock = async () => {
+    const unmanagedEvals = (safeData.loadedIssues || []).filter(id => !issues.some(i => i.entryMode === 'eval' && i.targetIssue === id));
+    const unmanagedCarryovers = issues.filter(i => i.entryMode === 'carryover' && i.carryoverStatus === 'OPEN');
+    
+    if (unmanagedEvals.length > 0 || unmanagedCarryovers.length > 0) {
+      let msg = "";
+      if (unmanagedEvals.length > 0) msg += `• 평가되지 않은 이전 차수 유보 건: ${unmanagedEvals.length}건\n`;
+      if (unmanagedCarryovers.length > 0) msg += `• 조치되지 않은 자동 이월 건: ${unmanagedCarryovers.length}건\n`;
+      msg += "\n아직 평가/조치가 완료되지 않은 항목이 있습니다. 이대로 편집을 완료하고 저장 및 잠금 처리하시겠습니까?";
+
+      const confirmed = await showConfirm({
+        title: "미완료 조치 항목 존재",
+        message: msg,
+        type: "warning",
+        confirmText: "저장 및 잠금",
+        cancelText: "편집 계속하기"
+      });
+
+      if (!confirmed) return; // 저장 취소
+    }
+
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
@@ -465,28 +496,16 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         </div>
 
         <div className="shrink-0 border-l pl-3 border-slate-200">
-          {(() => {
-            const unmanagedEvals = (safeData.loadedIssues || []).filter(id => !issues.some(i => i.entryMode === 'eval' && i.targetIssue === id));
-            const unmanagedCarryovers = issues.filter(i => i.entryMode === 'carryover' && i.carryoverStatus === 'OPEN');
-            const disableLock = unmanagedEvals.length > 0 || unmanagedCarryovers.length > 0;
-            let disableReason = "";
-            if (disableLock) {
-              if (unmanagedEvals.length > 0) disableReason += "수정 평가(eval)가 완료되지 않았습니다. ";
-              if (unmanagedCarryovers.length > 0) disableReason += "자동 이월된 OPEN 이슈에 조치가 필요합니다.";
-            }
-            return (
-              <ActionBar
-                isGlobalArchived={isArchived}
-                isEditing={isTabEditing}
-                onEdit={() => setIsTabEditing(true)}
-                onLock={handleLock}
-                disableLock={disableLock}
-                disableReason={disableReason}
-                lockReason={lockReason}
-                onForceUnlock={onForceUnlock}
-              />
-            );
-          })()}
+          <ActionBar
+            isGlobalArchived={isArchived}
+            isEditing={isTabEditing}
+            onEdit={() => setIsTabEditing(true)}
+            onLock={handleLock}
+            disableLock={false}
+            disableReason=""
+            lockReason={lockReason}
+            onForceUnlock={onForceUnlock}
+          />
         </div>
       </div>
 
@@ -557,56 +576,114 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <IssueForm
-          key={mode + (editingId || 'new') + (formData.faId || '') + formResetKey}
-          initialData={formData}
-          mode={mode}
-          editingId={editingId}
-          isReadOnly={isReadOnly}
-          isArchived={isArchived}
-          stage={stage}
-          project={project}
-          currentSelectedIp={ipDropdown}
-          availableIps={availableIps}
-          latestIssueStates={latestIssueStates}
-          historyBlocks={historyBlocks}
-          issues={issues}
-          ipIndexData={ipIndexData}
-          curStageNums={curStageNums}
-          carryoverCandidateSet={carryoverCandidateSet}
-          sortedLoadedIssues={sortedLoadedIssues}
-          availOrigins={availOrigins}
-          sortedRevIds={sortedAllIds}
-          onSave={handleSave}
-          onCancel={cancelEdit}
-          onChange={handleFormChange}
-          onPullFaClick={() => setPullFaModalOpen(true)}
-          onUnlinkFa={handleUnlinkFa}
-          onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
-          onSetEditingId={setEditingId}
-        />
+        <div className="min-w-0 overflow-hidden">
+          <IssueForm
+            key={mode + (editingId || 'new') + (formData.faId || '') + formResetKey}
+            initialData={formData}
+            mode={mode}
+            editingId={editingId}
+            isReadOnly={isReadOnly}
+            isArchived={isArchived}
+            stage={stage}
+            project={project}
+            currentSelectedIp={ipDropdown}
+            availableIps={availableIps}
+            latestIssueStates={latestIssueStates}
+            historyBlocks={historyBlocks}
+            issues={issues}
+            ipIndexData={ipIndexData}
+            curStageNums={curStageNums}
+            carryoverCandidateSet={carryoverCandidateSet}
+            sortedLoadedIssues={sortedLoadedIssues}
+            availOrigins={availOrigins}
+            sortedRevIds={sortedAllIds}
+            onSave={handleSave}
+            onCancel={cancelEdit}
+            onChange={handleFormChange}
+            onPullFaClick={() => setPullFaModalOpen(true)}
+            onUnlinkFa={handleUnlinkFa}
+            onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
+            onSetEditingId={setEditingId}
+          />
+        </div>
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 flex flex-col h-[calc(100vh-12rem)] overflow-y-auto">
           <div className="sticky top-0 z-10 bg-gray-50 rounded-t-xl px-5 pt-5 pb-3 mb-3 border-b border-gray-200 flex flex-row items-center justify-between">
             <h2 className="text-sm font-semibold flex items-center gap-2 text-gray-800 m-0 whitespace-nowrap shrink-0">
               <FileText size={16} className="text-gray-600" /> Current - {stage}
             </h2>
-            <div className="flex flex-row items-center gap-2.5 shrink-0 overflow-x-auto ml-6 p-1">
-              <button onClick={() => setStatusFilter('ALL')} className={`flex items-center gap-2 px-4 py-1 rounded-lg shadow-sm transition-all ${statusFilter === 'ALL' ? 'border-2 border-slate-400 bg-slate-100 scale-105 font-semibold' : 'border border-slate-200 bg-white opacity-60 hover:opacity-100'}`}>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Total</span><span className="font-mono font-semibold text-slate-700">{stats.total}</span>
-              </button>
-              <button onClick={() => setStatusFilter('OPEN')} className={`flex items-center gap-2 px-4 py-1 rounded-lg shadow-sm transition-all ${statusFilter === 'OPEN' ? 'border-2 border-orange-400 bg-orange-100 scale-105 font-semibold' : 'border border-orange-200 bg-orange-50 opacity-60 hover:opacity-100'}`}>
-                <span className="text-[10px] font-semibold text-orange-500 uppercase tracking-widest">Open</span><span className="font-mono font-semibold text-orange-700">{stats.open}</span>
-              </button>
-              <button onClick={() => setStatusFilter('DEF')} className={`flex items-center gap-2 px-4 py-1 rounded-lg shadow-sm transition-all ${statusFilter === 'DEF' ? 'border-2 border-blue-400 bg-blue-100 scale-105 font-semibold' : 'border border-blue-200 bg-blue-50 opacity-60 hover:opacity-100'}`}>
-                 <span className="text-[10px] font-semibold text-blue-500 uppercase tracking-widest">Def</span><span className="font-mono font-semibold text-blue-700">{stats.deferred}</span>
-              </button>
-              <button onClick={() => setStatusFilter('CLOSED')} className={`flex items-center gap-2 px-4 py-1 rounded-lg shadow-sm transition-all ${statusFilter === 'CLOSED' ? 'border-2 border-green-400 bg-green-100 scale-105 font-semibold' : 'border border-green-200 bg-green-50 opacity-60 hover:opacity-100'}`}>
-                <span className="text-[10px] font-semibold text-green-500 uppercase tracking-widest">Closed</span><span className="font-mono font-semibold text-green-700">{stats.closed}</span>
-              </button>
-              <div className="w-px h-5 bg-slate-300 mx-2 shrink-0"></div>
-              <button onClick={() => setHistoryModalOpen(true)} className="flex items-center h-7 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 rounded-lg font-semibold text-[11px] transition-colors shadow-sm shrink-0">
-                <Activity size={12} /> 리포트
+            <div className="flex flex-row items-center gap-2 shrink-0 overflow-x-auto ml-6 p-0.5 select-none">
+              {[
+                {
+                  key: 'ALL',
+                  label: 'Total',
+                  value: stats.total,
+                  activeClass: 'border-slate-300 bg-slate-100 text-slate-800 font-bold',
+                  inactiveClass: 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                  labelActiveColor: 'text-slate-500',
+                  valueActiveColor: 'text-slate-800'
+                },
+                {
+                  key: 'OPEN',
+                  label: 'Open',
+                  value: stats.open,
+                  activeClass: 'border-orange-300 bg-orange-50 text-orange-700 font-bold',
+                  inactiveClass: 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                  labelActiveColor: 'text-orange-500',
+                  valueActiveColor: 'text-orange-700'
+                },
+                {
+                  key: 'DEF',
+                  label: 'Def',
+                  value: stats.deferred,
+                  activeClass: 'border-blue-300 bg-blue-50 text-blue-700 font-bold',
+                  inactiveClass: 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                  labelActiveColor: 'text-blue-500',
+                  valueActiveColor: 'text-blue-700'
+                },
+                {
+                  key: 'CLOSED',
+                  label: 'Closed',
+                  value: stats.closed,
+                  activeClass: 'border-green-300 bg-green-50 text-green-700 font-bold',
+                  inactiveClass: 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                  labelActiveColor: 'text-green-600',
+                  valueActiveColor: 'text-green-700'
+                }
+              ].map((item) => {
+                const isSelected = statusFilter === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => setStatusFilter(item.key)}
+                    className={`group h-8 inline-flex items-center px-3 py-1 rounded-lg border shadow-sm transition-all duration-150 text-xs shrink-0 select-none cursor-pointer ${
+                      isSelected ? item.activeClass : item.inactiveClass
+                    }`}
+                  >
+                    <span
+                      className={`text-[10px] tracking-widest uppercase font-bold transition-colors duration-150 ${
+                        isSelected ? item.labelActiveColor : 'text-slate-400 group-hover:text-slate-600'
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className={`font-mono text-xs font-bold ml-1.5 transition-colors duration-150 ${
+                        isSelected ? item.valueActiveColor : 'text-slate-600 group-hover:text-slate-800'
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="w-px h-3.5 bg-slate-200 mx-1.5 shrink-0" />
+              <button
+                onClick={() => setHistoryModalOpen(true)}
+                className="flex items-center h-8 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 rounded-lg font-semibold text-xs transition-colors shadow-sm shrink-0"
+              >
+                <Activity size={12} />
+                <span>리포트</span>
               </button>
             </div>
           </div>
@@ -615,6 +692,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
               <RevisionLogVirtualList
                 issues={issues}
                 safeData={safeData}
+                onShowHistoryReport={handleShowHistoryReport}
                 project={project}
                 ipDropdown={ipDropdown}
                 statusFilter={statusFilter}
@@ -631,14 +709,29 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                   handleEdit,
                   handleDeleteRequest
                 }}
+                latestIssueStates={latestIssueStates}
               />
           </div>
 
           {historyBlocks.length > 0 && (() => {
-            const totalHistoryCount = historyBlocks.reduce((acc, block) => {
-              const filtered = block.issues.filter(i => ipDropdown === 'All' ? true : (i.ipBlock || (i.targetIssue ? i.targetIssue.split('.')[0] : '')) === ipDropdown);
-              return acc + filtered.length;
-            }, 0);
+            const uniqueHistoryIssues = new Set();
+            historyBlocks.forEach(block => {
+              (block.issues || []).forEach(i => {
+                if (!i) return;
+                const isNewLike = i.entryMode === 'new' || i.entryMode === 'fa';
+                const ip = isNewLike 
+                  ? i.ipBlock 
+                  : (i.targetIssue ? i.targetIssue.split('.')[0] : '');
+                
+                if (ipDropdown === 'All' || ip === ipDropdown) {
+                  const id = isNewLike 
+                    ? `${i.ipBlock}.${project}.${i.issueNum}` 
+                    : i.targetIssue;
+                  if (id) uniqueHistoryIssues.add(id);
+                }
+              });
+            });
+            const totalHistoryCount = uniqueHistoryIssues.size;
 
             if (totalHistoryCount === 0) return null;
 
@@ -656,7 +749,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                   </h3>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold select-none">
-                      {totalHistoryCount}건
+                      이슈 {totalHistoryCount}건
                     </span>
                     <span className={`transform transition-transform duration-300 text-slate-400 ${isHistoryExpanded ? 'rotate-180' : ''}`}>
                       <ChevronDown size={16} />
