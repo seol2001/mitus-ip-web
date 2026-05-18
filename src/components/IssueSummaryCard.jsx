@@ -120,12 +120,12 @@ export default React.memo(function IssueSummaryCard({
   // ── Actionable Decision Badge Injection (V1.7.3) ──
   if (needsEval) {
     badges.unshift({
-      label: '⚠️ 판정 대기 (판정 필요)',
+      label: '⚠️ 판정 필요',
       style: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold animate-pulse shadow-sm'
     });
   } else if (item.entryMode === 'carryover' && item.carryoverStatus === 'OPEN') {
     badges.unshift({
-      label: '🔍 유지 심사 (심사 필요)',
+      label: '🔍 유지 심사 필요',
       style: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold shadow-sm'
     });
   }
