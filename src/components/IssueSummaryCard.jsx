@@ -117,6 +117,19 @@ export default React.memo(function IssueSummaryCard({
     }
   }
 
+  // ── Actionable Decision Badge Injection (V1.7.3) ──
+  if (needsEval) {
+    badges.unshift({
+      label: '⚠️ 판정 대기 (판정 필요)',
+      style: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold animate-pulse shadow-sm'
+    });
+  } else if (item.entryMode === 'carryover' && item.carryoverStatus === 'OPEN') {
+    badges.unshift({
+      label: '🔍 유지 심사 (심사 필요)',
+      style: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold shadow-sm'
+    });
+  }
+
   // phenomenon에서 레거시 FA 헤더 제거 (이전 데이터 정규화)
   const cleanPhenomenon = (() => {
     const raw = item.phenomenon || '';
@@ -378,28 +391,6 @@ export default React.memo(function IssueSummaryCard({
           </div>
 
           <div className="flex items-center gap-0.5 shrink-0 ml-1 mt-0.5">
-            {/* 판정 대기 뱃지 */}
-            {needsEval && (
-              <span
-                onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
-                className="flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full shadow-sm cursor-pointer select-none mr-1 transition-all hover:bg-amber-100"
-                title="이월 검토 판정 대기: 클릭하여 평가 입력"
-              >
-                <ArrowRightCircle size={11} className="shrink-0" />
-                <span>판정 대기</span>
-              </span>
-            )}
-            {/* 유지 심사 뱃지 */}
-            {!needsEval && item.entryMode === 'carryover' && (
-              <span
-                onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
-                className="flex items-center gap-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full shadow-sm cursor-pointer select-none mr-1 transition-all hover:bg-indigo-100"
-                title="관리형 부채 유지 심사: 클릭하여 상태 검토"
-              >
-                <ShieldCheck size={11} className="shrink-0" />
-                <span>유지 심사</span>
-              </span>
-            )}
             {onShowHistoryReport && (
               <button
                 type="button"
@@ -407,7 +398,7 @@ export default React.memo(function IssueSummaryCard({
                   e.stopPropagation();
                   onShowHistoryReport(issueId);
                 }}
-                className="flex items-center gap-1 bg-blue-50/50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md border border-blue-200/60 text-[10px] font-bold transition-all shadow-sm shrink-0 select-none mr-1 hover:scale-105 active:scale-95 duration-150"
+                className="flex items-center gap-1 bg-blue-50/50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 px-2.5 py-0.5 h-[22px] rounded-full border border-blue-200/60 text-[10px] font-bold transition-all shadow-sm shrink-0 select-none mr-1 hover:scale-105 active:scale-95 duration-150"
                 title="이슈 과거 변경 이력 리포트 보기"
               >
                 <Activity size={11} className="animate-pulse" />
