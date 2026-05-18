@@ -72,6 +72,54 @@ const RevisionLogVirtualList = ({
     return null;
   }, [historyBlocks, project]);
 
+  // 특정 이슈의 차수별 이력 타임라인 생성 (Derived State)
+  const getIssueTimeline = useCallback((issueId) => {
+    if (!issueId) return [];
+    
+    const timeline = [];
+    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
+    
+    // 1. 과거 차수(historyBlocks) 탐색
+    if (historyBlocks && historyBlocks.length > 0) {
+      historyBlocks.forEach(block => {
+        const stageName = block.stageName;
+        const found = block.issues?.find(i => {
+          const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+          return id === issueId;
+        });
+        
+        if (found) {
+          timeline.push({
+            stage: stageName,
+            data: { ...found, stage: stageName }
+          });
+        }
+      });
+    }
+    
+    // 2. 현재 차수(sortedIssues) 탐색
+    const foundCurrent = sortedIssues?.find(i => {
+      const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+      return id === issueId;
+    });
+    
+    if (foundCurrent) {
+      timeline.push({
+        stage: stage,
+        data: { ...foundCurrent, stage: stage }
+      });
+    }
+    
+    // 3. 차수 순서대로 정렬
+    timeline.sort((a, b) => {
+      const idxA = STAGES.indexOf(a.stage);
+      const idxB = STAGES.indexOf(b.stage);
+      return idxA - idxB;
+    });
+    
+    return timeline;
+  }, [historyBlocks, sortedIssues, project, stage]);
+
   // 데이터 분류
   const {
     pendingEvalItems,
@@ -255,6 +303,7 @@ const RevisionLogVirtualList = ({
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
                     onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(id)}
                   />
                 );
               })}
@@ -275,6 +324,7 @@ const RevisionLogVirtualList = ({
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
                     onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(id)}
                   />
                 );
               })}
@@ -300,23 +350,27 @@ const RevisionLogVirtualList = ({
           />
           {expandedSections.newFindings && (
             <div className="space-y-2 mt-2">
-              {newFindings.map(item => (
-                <IssueSummaryCard
-                  key={item.id}
-                  item={item}
-                  project={project}
-                  isReadOnly={isReadOnly}
-                  editingId={editingId}
-                  onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
-                  onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
-                  currentStage={stage}
-                  needsEval={false}
-                  expandable={true}
-                  expanded={!!expandedItems[item.id]}
-                  onToggleExpand={() => toggleExpand(item.id)}
-                  onShowHistoryReport={onShowHistoryReport}
-                />
-              ))}
+              {newFindings.map(item => {
+                const id = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+                return (
+                  <IssueSummaryCard
+                    key={item.id}
+                    item={item}
+                    project={project}
+                    isReadOnly={isReadOnly}
+                    editingId={editingId}
+                    onEdit={isReadOnly ? handlers.handleView : handlers.handleEdit}
+                    onDelete={isReadOnly ? undefined : handlers.handleDeleteRequest}
+                    currentStage={stage}
+                    needsEval={false}
+                    expandable={true}
+                    expanded={!!expandedItems[item.id]}
+                    onToggleExpand={() => toggleExpand(item.id)}
+                    onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(id)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -357,6 +411,7 @@ const RevisionLogVirtualList = ({
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
                     onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(itemIssueId)}
                   />
                 );
               })}
@@ -400,6 +455,7 @@ const RevisionLogVirtualList = ({
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
                     onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(itemIssueId)}
                   />
                 );
               })}
@@ -443,6 +499,7 @@ const RevisionLogVirtualList = ({
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
                     onShowHistoryReport={onShowHistoryReport}
+                    timeline={getIssueTimeline(itemIssueId)}
                   />
                 );
               })}

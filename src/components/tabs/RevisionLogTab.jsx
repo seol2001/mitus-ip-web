@@ -128,6 +128,52 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   }), [ipDropdown, latestIssueStates, baseResetForm]);
 
   // ── 파생 상태 (Derived States) ──
+  const getIssueTimeline = useCallback((issueId) => {
+    if (!issueId) return [];
+    
+    const timeline = [];
+    
+    // 1. 과거 차수(historyBlocks) 탐색
+    if (historyBlocks && historyBlocks.length > 0) {
+      historyBlocks.forEach(block => {
+        const stageName = block.stageName;
+        const found = block.issues?.find(i => {
+          const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+          return id === issueId;
+        });
+        
+        if (found) {
+          timeline.push({
+            stage: stageName,
+            data: { ...found, stage: stageName }
+          });
+        }
+      });
+    }
+    
+    // 2. 현재 차수(issues) 탐색
+    const foundCurrent = issues?.find(i => {
+      const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+      return id === issueId;
+    });
+    
+    if (foundCurrent) {
+      timeline.push({
+        stage: stage,
+        data: { ...foundCurrent, stage: stage }
+      });
+    }
+    
+    // 3. 차수 순서대로 정렬
+    timeline.sort((a, b) => {
+      const idxA = STAGES.indexOf(a.stage);
+      const idxB = STAGES.indexOf(b.stage);
+      return idxA - idxB;
+    });
+    
+    return timeline;
+  }, [historyBlocks, issues, project, stage, STAGES]);
+
   const availOrigins = useMemo(() => {
     const idx = STAGES.indexOf(stage);
     return idx > 0 ? STAGES.slice(0, idx) : [];
@@ -608,7 +654,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         </div>
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 flex flex-col h-[calc(100vh-12rem)] overflow-y-auto">
-          <div className="sticky top-0 z-10 bg-gray-50 rounded-t-xl px-5 pt-5 pb-3 mb-3 border-b border-gray-200 flex flex-row items-center justify-between">
+          <div className="sticky top-0 z-20 bg-gray-50 rounded-t-xl px-5 pt-5 pb-3 mb-3 border-b border-gray-200 flex flex-row items-center justify-between">
             <h2 className="text-sm font-semibold flex items-center gap-2 text-gray-800 m-0 whitespace-nowrap shrink-0">
               <FileText size={16} className="text-gray-600" /> Current - {stage}
             </h2>
@@ -769,18 +815,25 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                               <FolderOpen size={14} /> Stage: {block.stageName}
                             </h4>
                             <div className="space-y-2">
-                              {filteredHits.map(item => (
-                                <IssueSummaryCard
-                                  key={item.id}
-                                  item={item}
-                                  project={project}
-                                  isReadOnly={true}
-                                  expandable
-                                  onEdit={handleHistoryCardClick}
-                                  historyStage={block.stageName}
-                                  needsEval={false}
-                                />
-                              ))}
+                              {filteredHits.map(item => {
+                                const id = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+                                return (
+                                  <IssueSummaryCard
+                                    key={item.id}
+                                    item={item}
+                                    project={project}
+                                    isReadOnly={true}
+                                    expandable
+                                    onEdit={() => handleView({
+                                      ...item,
+                                      stage: item.stage || block.stageName
+                                    })}
+                                    historyStage={block.stageName}
+                                    needsEval={false}
+                                    timeline={getIssueTimeline(id)}
+                                  />
+                                );
+                              })}
                             </div>
                           </div>
                         );

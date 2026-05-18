@@ -50,19 +50,72 @@ export default function IssueForm({
   onChange,
   onSetEditingId // 부모의 editingId를 동기화하기 위한 콜백
 }) {
-  const [formData, setFormData] = useState(initialData);
+  const [localFormData, setFormData] = useState(initialData);
+  const [activeStage, setActiveStage] = useState(initialData?.stage || stage);
+
+  // ── [보안/성능] derived state: 현재 이슈의 차수별 이력 타임라인 생성 ──
+  const currentIssueId = useMemo(() => {
+    if (!localFormData) return null;
+    return localFormData.entryMode === 'new' 
+      ? `${localFormData.ipBlock}.${project}.${localFormData.issueNum}` 
+      : localFormData.targetIssue;
+  }, [localFormData, project]);
+
+  const timeline = useMemo(() => {
+    if (!currentIssueId) return [];
+    const list = [];
+    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'DVT', 'PVT', 'MP'];
+    
+    // 1. 과거 히스토리 블록 루프
+    (historyBlocks || []).forEach(block => {
+      const found = block.issues?.find(i => {
+        const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+        return id === currentIssueId;
+      });
+      if (found) {
+        list.push({ stage: block.stageName, data: { ...found, stage: block.stageName } });
+      }
+    });
+    
+    // 2. 현재 차수 루프
+    const foundCur = (issues || []).find(i => {
+      const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+      return id === currentIssueId;
+    });
+    if (foundCur) {
+      list.push({ stage: stage, data: { ...foundCur, stage: stage } });
+    }
+    
+    // 3. 차수 오름차순 정렬
+    list.sort((a, b) => STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage));
+    return list;
+  }, [currentIssueId, historyBlocks, issues, project, stage]);
+
+  const isTimeTraveling = activeStage !== stage;
+  const displayIsReadOnly = isReadOnly || isTimeTraveling;
+
+  const displayData = useMemo(() => {
+    const matched = timeline.find(t => t.stage === activeStage);
+    return matched ? matched.data : localFormData;
+  }, [activeStage, timeline, localFormData]);
+
+  // ── [치트키] 렌더링 시에는 displayData를 formData로 섀도잉하여 시간 여행 스왑 자동 반영 ──
+  const formData = displayData;
 
   // ── [수정] 0.1초의 레이스 컨디션 및 상태 유실 방지 ──
   // 단순히 initialData가 변했다고 덮어씌우지 않고, 실제로 '대상 이슈'가 바뀌었을 때만 초기화함
   const lastInitialId = React.useRef(null);
   useEffect(() => {
-    // editingId(고유ID) 또는 targetIssue를 최우선으로 사용하여 고유성 보장. faId 추가하여 FA 연동 대응
-    const currentId = editingId || initialData.id || initialData.faId || initialData.targetIssue || initialData.issueNum || 'new';
+    // [버그 수정] 동일한 이슈의 다른 차수 카드 전환 시 상태 고착을 막기 위해 stage와 id 정보를 명확히 조합하여 고유 ID를 정의함
+    const baseId = editingId || initialData.id || initialData.faId || initialData.targetIssue || initialData.issueNum || 'new';
+    const currentId = `${baseId}_${initialData.stage || stage}`;
+    
     if (lastInitialId.current !== currentId) {
       setFormData(initialData);
+      setActiveStage(initialData.stage || stage);
       lastInitialId.current = currentId;
     }
-  }, [initialData, editingId]);
+  }, [initialData, editingId, stage]);
 
   // ── [제거] 무한 루프 원인이 되는 실시간 자동 동기화 useEffect ──
   // 대신 handleInput 및 개별 변경 핸들러에서 명시적으로 onChange를 호출함
@@ -182,19 +235,45 @@ export default function IssueForm({
 
   if (isReadOnly) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden ring-2 ring-indigo-300/30 bg-indigo-50/5 h-full">
+      <div className={`border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden ring-2 ring-indigo-300/30 transition-all h-full ${isTimeTraveling ? 'bg-slate-50/95 shadow-inner' : 'bg-indigo-50/5 bg-white'}`}>
         {/* 상단 락 장치 헤더 */}
         <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
           <div className="flex items-center gap-2">
             <Lock size={14} className="text-slate-400" />
             <span className="text-xs font-bold text-slate-500">
-              ReadOnly Mode <span className="text-[10px] font-normal text-slate-400 ml-0.5">(과거 차수 조회)</span>
+              ReadOnly Mode
             </span>
           </div>
           <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wider">
-            {mode === 'new' ? 'New Entry' : mode === 'fa' ? 'FA Entry' : mode === 'reopen' ? 'Re-Opened' : mode === 'carryover' ? 'Carry-over' : 'Evaluation'}
+            {formData.entryMode === 'new' ? 'New Entry' : formData.entryMode === 'fa' ? 'FA Entry' : formData.entryMode === 'reopen' ? 'Re-Opened' : formData.entryMode === 'carryover' ? 'Carry-over' : 'Evaluation'}
           </span>
         </div>
+
+        {/* ⏱️ 과거 이력 시간 여행 슬라이더 (탭) */}
+        {timeline.length > 1 && (
+          <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 pb-2.5 mb-4 shrink-0 select-none">
+            <div className="flex items-center gap-2 flex-nowrap min-w-max p-0.5">
+              {timeline.map((node, index) => {
+                const isActive = node.stage === activeStage;
+                
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => setActiveStage(node.stage)}
+                    className={`px-3 py-1.5 text-xs rounded-xl font-bold border transition-all duration-200 active:scale-[0.98] ${
+                      isActive
+                        ? 'bg-blue-50 border-blue-300 text-blue-600 font-extrabold shadow-sm'
+                        : 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-700'
+                    }`}
+                  >
+                    {node.stage}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 타이틀 및 차수 정보 */}
         <div className="mb-5 shrink-0">
@@ -210,7 +289,7 @@ export default function IssueForm({
               </span>
             )}
           </h2>
-          <p className="text-[10px] text-slate-400 mt-1">조회 차수: <span className="font-semibold text-slate-600">{stage}</span></p>
+          <p className="text-[10px] text-slate-400 mt-1">조회 차수: <span className="font-semibold text-slate-600">{formData.stage || stage}</span></p>
         </div>
 
         {/* 2단 핵심 메타데이터 그리드 */}
@@ -449,10 +528,36 @@ export default function IssueForm({
   }
 
   return (
-    <div className={`bg-white border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden transition-all ${editingId && !isReadOnly ? 'ring-2 ring-blue-400' : ''} ${editingId && isReadOnly ? 'ring-2 ring-indigo-300 bg-indigo-50/10' : ''}`}>
+    <div className={`bg-white border border-slate-200 rounded-xl p-5 flex flex-col min-w-0 overflow-hidden transition-all ${editingId && !isReadOnly ? 'ring-2 ring-blue-400' : ''} ${editingId && isReadOnly ? 'ring-2 ring-indigo-300 bg-indigo-50/10' : ''} ${isTimeTraveling ? 'bg-slate-50/90 opacity-95 shadow-inner' : ''}`}>
+       {/* ⏱️ 과거 이력 시간 여행 슬라이더 (탭) */}
+       {timeline.length > 1 && (
+         <div className="w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 pb-2.5 mb-4 shrink-0 select-none">
+           <div className="flex items-center gap-2 flex-nowrap min-w-max p-0.5">
+             {timeline.map((node, index) => {
+               const isActive = node.stage === activeStage;
+               
+               return (
+                 <button
+                   key={index}
+                   type="button"
+                   onClick={() => setActiveStage(node.stage)}
+                   className={`px-3 py-1.5 text-xs rounded-xl font-bold border transition-all duration-200 active:scale-[0.98] ${
+                     isActive
+                       ? 'bg-blue-50 border-blue-300 text-blue-600 font-extrabold shadow-sm'
+                       : 'bg-white hover:bg-slate-50 text-slate-500 border-slate-200 hover:text-slate-700'
+                   }`}
+                 >
+                   {node.stage}
+                 </button>
+               );
+             })}
+           </div>
+         </div>
+       )}
+
        {editingId && (
          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-           {isReadOnly ? (<><Edit2 size={14} className="text-slate-500" /><span className="text-sm font-bold text-slate-700">ReadOnly Mode <span className="text-xs font-normal text-slate-400 ml-1">(과거 차수 조회)</span></span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
+           {isReadOnly ? (<><Edit2 size={14} className="text-slate-500" /><span className="text-sm font-bold text-slate-700">ReadOnly Mode</span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
          </div>
        )}
        {stage === 'EVT0' && !isReadOnly && !editingId && (
@@ -464,20 +569,20 @@ export default function IssueForm({
          </div>
        )}
        <div className="mb-4">
-         {mode === 'eval' && <div className="bg-green-50 border border-green-100 p-3 rounded-lg"><p className="text-sm text-green-800 font-medium">이전 차수에서 [Revision] 처리된 항목에 대한 현재 차수({stage})의 테스트 결과를 기록합니다.</p></div>}
-         {mode === 'carryover' && <div className="bg-purple-50 border border-purple-200 p-3 rounded-lg"><p className="text-sm text-purple-800 font-medium">직전 차수에서 미해결/유보되어 넘어온 OPEN 이슈에 대한 Action을 결정합니다.</p></div>}
-         {mode === 'new' && <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg"><p className="text-sm text-blue-800 font-medium">새롭게 발견된 이슈나 잠재적인 위험 요소를 신규 엔트리로 등록합니다.</p></div>}
-         {mode === 'reopen' && <div className="bg-red-50 border border-red-100 p-3 rounded-lg"><p className="text-sm text-red-800 font-medium">완료/보류된 이슈를 다시 오픈하여 새로운 대책을 수립합니다.</p></div>}
-         {mode === 'fa' && <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg"><p className="text-sm text-amber-800 font-medium">분석이 완료된 FA 리포트의 데이터를 끌어와 신규 이슈로 등록합니다.</p></div>}
+         {!isTimeTraveling && mode === 'eval' && <div className="bg-green-50 border border-green-100 p-3 rounded-lg"><p className="text-sm text-green-800 font-medium">이전 차수에서 [Revision] 처리된 항목에 대한 현재 차수({stage})의 테스트 결과를 기록합니다.</p></div>}
+         {!isTimeTraveling && mode === 'carryover' && <div className="bg-purple-50 border border-purple-200 p-3 rounded-lg"><p className="text-sm text-purple-800 font-medium">직전 차수에서 미해결/유보되어 넘어온 OPEN 이슈에 대한 Action을 결정합니다.</p></div>}
+         {!isTimeTraveling && mode === 'new' && <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg"><p className="text-sm text-blue-800 font-medium">새롭게 발견된 이슈나 잠재적인 위험 요소를 신규 엔트리로 등록합니다.</p></div>}
+         {!isTimeTraveling && mode === 'reopen' && <div className="bg-red-50 border border-red-100 p-3 rounded-lg"><p className="text-sm text-red-800 font-medium">완료/보류된 이슈를 다시 오픈하여 새로운 대책을 수립합니다.</p></div>}
+         {!isTimeTraveling && mode === 'fa' && <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg"><p className="text-sm text-amber-800 font-medium">분석이 완료된 FA 리포트의 데이터를 끌어와 신규 이슈로 등록합니다.</p></div>}
        </div>
 
-       {mode === 'fa' && (
-         <button onClick={onPullFaClick} disabled={isReadOnly} className={`w-full mb-4 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 border transition-all ${isReadOnly ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100'}`}>
+       {!isTimeTraveling && mode === 'fa' && (
+         <button onClick={onPullFaClick} disabled={displayIsReadOnly} className={`w-full mb-4 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 border transition-all ${displayIsReadOnly ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-amber-50 text-amber-700 border-amber-400 hover:bg-amber-100'}`}>
            <Link size={14}/> FA 리포트에서 데이터 가져오기
          </button>
        )}
 
-      <fieldset disabled={isReadOnly} className="border-none p-0 m-0 flex-1 min-w-0 overflow-hidden">
+      <fieldset disabled={displayIsReadOnly} className="border-none p-0 m-0 flex-1 min-w-0 overflow-hidden">
         {mode === 'reopen' ? (
           <div className="space-y-4">
             <div>
@@ -516,7 +621,7 @@ export default function IssueForm({
               <div><label className={lc}>Phenomenon</label><textarea name="phenomenon" value={formData.phenomenon} onChange={handleInput} className={tc} rows="2"></textarea></div>
               <div><label className={lc}>Root Cause</label><textarea name="rootCause" value={formData.rootCause} onChange={handleInput} className={tc} rows="2"></textarea></div>
               <div><label className={lc}>Disposition</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-              <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={isReadOnly} />
+              <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={displayIsReadOnly} />
               <div><label className={lc}>Justification</label><textarea name="justification" value={formData.justification} onChange={handleInput} className={tc} rows="2"></textarea></div>
             </>)}
           </div>
@@ -699,7 +804,7 @@ export default function IssueForm({
             </div>
 
             <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} disabled={formData.assessment === 'Fixed'} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-            <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={isReadOnly} />
+            <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={displayIsReadOnly} />
           </div>
         ) : mode === 'carryover' ? (
           <div className="space-y-4">
@@ -817,13 +922,13 @@ export default function IssueForm({
                 <h3 className="text-sm font-bold text-red-600 flex items-center gap-2"><AlertCircle size={15} /> Partial / Unresolved 상세 내용</h3>
                 <div><label className={lc}>Severity</label><select name="severity" value={formData.severity} onChange={handleInput} className={`w-full ${ic}`}><option value="Major">Major</option><option value="Minor">Minor</option></select></div>
                 <div><label className={lc}>Disposition</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
-                <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={isReadOnly} />
+                <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={displayIsReadOnly} />
               </div>
             )}
           </div>
         ) : null}
 
-        <div><label className={`${lc} mt-4 flex justify-between items-center`}><span>Assignee (담당자)</span></label><input type="text" name="assignee" value={formData.assignee || ''} onClick={() => !isReadOnly && onOpenAssigneeModal()} readOnly className={`w-full ${isReadOnly ? 'cursor-not-allowed bg-slate-50 text-slate-400 border-slate-200' : 'cursor-pointer bg-slate-50 focus:bg-slate-100 hover:border-blue-400'} transition-colors ${ic}`} placeholder="클릭하여 지정" /></div>
+        <div><label className={`${lc} mt-4 flex justify-between items-center`}><span>Assignee (담당자)</span></label><input type="text" name="assignee" value={formData.assignee || ''} onClick={() => !displayIsReadOnly && onOpenAssigneeModal()} readOnly className={`w-full ${displayIsReadOnly ? 'cursor-not-allowed bg-slate-50 text-slate-400 border-slate-200' : 'cursor-pointer bg-slate-50 focus:bg-slate-100 hover:border-blue-400'} transition-colors ${ic}`} placeholder="클릭하여 지정" /></div>
       </fieldset>
 
       {/* ───────── 하단 버튼 영역 (배포 버전 복구) ───────── */}
@@ -831,9 +936,9 @@ export default function IssueForm({
         {/* 리스트에 추가 / 수정 사항 저장 (왼쪽, 넓게) */}
         <button
           onClick={() => onSave(formData)}
-          disabled={isSaveDisabled || isReadOnly}
+          disabled={isSaveDisabled || displayIsReadOnly}
           className={`flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white shadow-lg transition-all duration-200 ${
-            isSaveDisabled || isReadOnly 
+            isSaveDisabled || displayIsReadOnly 
               ? 'bg-gray-300 cursor-not-allowed shadow-none' 
               : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98] shadow-blue-600/25'
           }`}

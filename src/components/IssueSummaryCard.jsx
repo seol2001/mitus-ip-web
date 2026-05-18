@@ -14,6 +14,7 @@ export default React.memo(function IssueSummaryCard({
   historyStage,
   needsEval = false,
   onShowHistoryReport,
+  timeline = [],
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -175,7 +176,7 @@ export default React.memo(function IssueSummaryCard({
 
   return (
     <div
-      className={`rounded-xl shadow-sm overflow-hidden transition-all duration-200 mb-2 ${getColorBar()} ${borderClass} ${getBgTint()} ${
+      className={`rounded-xl shadow-sm transition-all duration-200 mb-2 ${getColorBar()} ${borderClass} ${getBgTint()} ${
         onEdit ? 'cursor-pointer hover:shadow-md hover:brightness-[0.98]' : ''
       }`}
       onClick={handleCardClick}
@@ -252,6 +253,125 @@ export default React.memo(function IssueSummaryCard({
                 {item.verificationGap && <div className="col-span-full"><span className="font-bold text-slate-800 mr-1">Verification Gap:</span> <span className="whitespace-pre-wrap font-bold">{item.verificationGap}</span></div>}
                 {item.gapComment && <div className="col-span-full"><span className="font-bold text-slate-800 mr-1">Gap Comment:</span> <span className="whitespace-pre-wrap font-bold">{item.gapComment}</span></div>}
                 {item.entryMode === 'eval' && item.comment && <div className="col-span-full"><span className="font-semibold text-slate-600 mr-1">Eval Comment:</span> <span className="whitespace-pre-wrap">{item.comment}</span></div>}
+              </div>
+            )}
+
+            {/* 이슈 차수 노선도 (Milestone Line) */}
+            {timeline && timeline.length > 0 && (
+              <div className="mt-3.5 pt-2.5 border-t border-gray-100/70 flex items-center gap-3">
+                <span className="text-[9px] font-extrabold text-slate-400 select-none tracking-wider whitespace-nowrap">이력 노선도:</span>
+                <div className="flex items-center flex-1 relative h-6">
+                  {/* 가로 선 */}
+                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-slate-100 rounded-full" />
+                  
+                  {/* 개별 노드들 */}
+                  <div className="absolute left-0 right-0 top-0 bottom-0 flex justify-between items-center">
+                    {timeline.map((node, index) => {
+                      const isNodeCurrent = node.stage === currentStage;
+                      const status = node.data ? getIssueStatus(node.data) : 'OPEN';
+                      
+                      // 노드 색상 & 테두리 스타일 지정 (미니멀 파스텔 Hollow Ring 디자인)
+                      let nodeStyle = '';
+                      
+                      if (isCurrentlyEditing) {
+                        // 1. 해당 이슈카드가 선택/활성화된 상태일 때만 본연의 선명한 상태 색상을 뿜어냄!
+                        nodeStyle = 
+                          status === 'CLOSED' ? 'border-2 border-green-500 bg-green-50/60 ring-2 ring-green-100' :
+                          status === 'DEFERRED' ? 'border-2 border-blue-400 bg-blue-50/60 ring-2 ring-blue-100' :
+                          'border-2 border-red-400 bg-red-50/60 ring-2 ring-red-100';
+                      } else {
+                        // 2. 평소(비활성화 카드)에는 아주 은은한 무채색 그레이 톤으로 통일하여 시각적 소음 0%화!
+                        nodeStyle = 'border border-slate-300 bg-slate-100/70 text-slate-400';
+                      }
+
+                      // 1. 툴팁 위치 및 꼬리표 위치 지능적 산출 (index 기반 분기)
+                      const isFirst = index === 0;
+                      const isLast = index === timeline.length - 1;
+                      
+                      let tooltipAlignClass = 'left-1/2 -translate-x-1/2'; // 기본 중앙
+                      let arrowAlignClass = 'left-1/2 -translate-x-1/2';
+                      
+                      if (isFirst) {
+                        tooltipAlignClass = 'left-0 -translate-x-[12px]'; // 오른쪽으로 밀어서 왼쪽 잘림 차단
+                        arrowAlignClass = 'left-[20px] -translate-x-0';
+                      } else if (isLast) {
+                        tooltipAlignClass = 'left-auto right-0 translate-x-[12px]'; // 왼쪽으로 밀어서 오른쪽 잘림 차단
+                        arrowAlignClass = 'left-auto right-[20px] -translate-x-0';
+                      }
+
+                      return (
+                        <div key={index} className="relative group/node flex items-center justify-center hover:z-50">
+                          {/* 원형 노드: cursor-help ➔ cursor-pointer 교체 완료 및 쌓임 맥락 뚫림 완치를 위해 z-10 ➔ z-0 강등 */}
+                          <div className={`w-2.5 h-2.5 rounded-full ${nodeStyle} cursor-pointer transition-all duration-200 hover:scale-125 z-0`} />
+                          
+                          {/* 미니 차수 레이블 */}
+                          <span className="absolute -bottom-4 text-[9px] font-bold text-slate-400 select-none whitespace-nowrap">
+                            {node.stage}
+                          </span>
+
+                          {/* 🎨 호버 툴팁 (CSS 및 Framer-like transition 효과 결합) */}
+                          <div className={`absolute bottom-6 ${tooltipAlignClass} opacity-0 pointer-events-none group-hover/node:opacity-100 group-hover/node:pointer-events-auto transition-all duration-200 transform translate-y-1 hover:translate-y-0 z-50 min-w-[260px] max-w-[320px]`}>
+                            {/* 화이트 글래스모피즘 스킨 도입 */}
+                            <div className="bg-white/95 backdrop-blur-md text-slate-700 text-xs rounded-xl p-3 shadow-xl border border-slate-200/80 flex flex-col gap-2 relative">
+                              {/* 말풍선 꼬리 */}
+                              <div className={`absolute bottom-[-6px] ${arrowAlignClass} w-3 h-3 bg-white/95 rotate-45 border-r border-b border-slate-200/80`} />
+                              
+                              {/* 헤더 */}
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-0.5">
+                                <span className="font-extrabold text-[10px] text-slate-800 tracking-wider">
+                                  🎯 STAGE {node.stage} 스냅샷
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                  status === 'CLOSED' ? 'bg-green-50 text-green-600 border-green-200/80' :
+                                  status === 'DEFERRED' ? 'bg-blue-50 text-blue-600 border-blue-200/80' :
+                                  'bg-red-50 text-red-600 border-red-200/80'
+                                }`}>
+                                  {status}
+                                </span>
+                              </div>
+
+                              {/* 툴팁 상세 항목 */}
+                              <div className="space-y-1.5 text-[11px] text-slate-600">
+                                <div>
+                                  <span className="text-slate-400 font-bold mr-1">처분(Disposition):</span>
+                                  <span className="font-semibold text-slate-700">{node.data?.disposition || '---'}</span>
+                                </div>
+                                {node.data?.assessment && (
+                                  <div>
+                                    <span className="text-slate-400 font-bold mr-1">평가결과:</span>
+                                    <span className="font-semibold text-slate-700">{node.data.assessment}</span>
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-slate-400 font-bold mr-1">담당자:</span>
+                                  <span className="font-semibold text-slate-700">{node.data?.assignee || '미지정'}</span>
+                                </div>
+                                {/* 조치계획 (modPlan 또는 justification) */}
+                                {(node.data?.modPlan || node.data?.justification) && (
+                                  <div className="bg-slate-50/70 border border-slate-100 p-2 rounded-lg mt-1">
+                                    <span className="text-slate-400 font-bold block mb-0.5">📋 조치계획 / Justification:</span>
+                                    <p className="text-slate-600 leading-relaxed break-all whitespace-pre-line m-0 line-clamp-3">
+                                      {node.data.modPlan || node.data.justification}
+                                    </p>
+                                  </div>
+                                )}
+                                {/* 코멘트 */}
+                                {node.data?.comment && (
+                                  <div className="bg-slate-50/70 border border-slate-100 p-2 rounded-lg mt-1">
+                                    <span className="text-slate-400 font-bold block mb-0.5">💬 당사의견 (Comment):</span>
+                                    <p className="text-slate-600 leading-relaxed break-all whitespace-pre-line m-0 line-clamp-3">
+                                      {node.data.comment}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </div>
