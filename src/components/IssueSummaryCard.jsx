@@ -126,7 +126,7 @@ export default React.memo(function IssueSummaryCard({
   } else if (item.entryMode === 'carryover' && item.carryoverStatus === 'OPEN') {
     badges.unshift({
       label: '🔍 유지 심사 필요',
-      style: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold shadow-sm'
+      style: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold animate-pulse shadow-sm'
     });
   }
 
