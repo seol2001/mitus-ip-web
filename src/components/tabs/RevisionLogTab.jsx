@@ -183,43 +183,42 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const sortedAllIds = useMemo(() => Object.keys(latestIssueStates).sort(), [latestIssueStates]);
 
   const needsEvalSet = useMemo(() => {
-    const evalledIds = {};
-    issues.forEach(i => {
-      if (i.entryMode === 'eval' && i.targetIssue) {
-        evalledIds[i.targetIssue] = true;
-      }
-    });
     const result = {};
     (safeData.loadedIssues || []).forEach(id => {
-      if (!evalledIds[id]) result[id] = true;
+      result[id] = true;
     });
     return result;
-  }, [issues, safeData.loadedIssues]);
+  }, [safeData.loadedIssues]);
 
   const carryoverCandidateSet = useMemo(() => {
     const loadedMap = {};
     (safeData.loadedIssues || []).forEach(id => loadedMap[id] = true);
     
-    const actedIds = {};
-    issues.forEach(i => {
-      if (i.entryMode === 'carryover' && i.targetIssue) {
-        actedIds[i.targetIssue] = true;
-      }
-    });
-    
     const candidates = {};
-    if (historyBlocks.length === 0) return candidates;
-    const lastBlk = historyBlocks[historyBlocks.length - 1];
-    lastBlk.issues.forEach(item => {
-      const id = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-      if (!id) return;
+    
+    // 1. 이번 차수의 조치 사항들(issues)을 제외한, 순수한 이전 차수까지의 최종 상태 맵을 구성
+    const prevIssueStates = {};
+    const allHistoricalIssues = [...historyBlocks].flatMap(b => b.issues || []);
+    
+    allHistoricalIssues.forEach(item => {
+      if (!item) return;
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      const id = isNewLike 
+        ? `${item.ipBlock}.${project}.${item.issueNum}` 
+        : item.targetIssue;
+      if (id) prevIssueStates[id] = item;
+    });
+
+    // 2. 이전 차수 최종 상태 기준으로 OPEN/DEFERRED 이고 이번 차수 평가 대상이 아닌 것들을 골라냅니다.
+    Object.entries(prevIssueStates).forEach(([id, item]) => {
       const status = getIssueStatus(item);
-      if ((status === 'OPEN' || status === 'DEFERRED') && !loadedMap[id] && !actedIds[id]) {
+      if ((status === 'OPEN' || status === 'DEFERRED') && !loadedMap[id]) {
         candidates[id] = true;
       }
     });
+    
     return candidates;
-  }, [historyBlocks, safeData.loadedIssues, issues, project]);
+  }, [historyBlocks, safeData.loadedIssues, project]);
 
   const curStageNums = useMemo(() => {
     return issues.filter(i => i.entryMode === 'new' && i.ipBlock === formData.ipBlock).map(i => i.issueNum).sort((a,b)=>a.localeCompare(b));
@@ -228,14 +227,15 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   // ── IP 변경 시 폼 동기화 (Effect) ──
   useEffect(() => {
     if (!editingId && mode === 'new') {
-      const nextNum = calcNextNum(ipDropdown, latestIssueStates);
+      const defaultIp = ipDropdown === 'All' ? (overviewData?.IP_Blocks?.[0] || '') : ipDropdown;
+      const nextNum = calcNextNum(defaultIp, latestIssueStates);
       setFormData(prev => ({ 
         ...prev, 
-        ipBlock: ipDropdown,
-        issueNum: (prev.ipBlock !== ipDropdown || !prev.issueNum) ? nextNum : prev.issueNum
+        ipBlock: defaultIp,
+        issueNum: (prev.ipBlock !== defaultIp || !prev.issueNum) ? nextNum : prev.issueNum
       }));
     }
-  }, [ipDropdown, editingId, mode, latestIssueStates]);
+  }, [ipDropdown, editingId, mode, latestIssueStates, overviewData?.IP_Blocks, setFormData]);
 
 
   const SEVERITY_FA_MAP = { S1: 'Fail', S2: 'Major', S3: 'Minor' };
@@ -318,7 +318,10 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         return;
       }
 
-      const currentIp = finalData.ipBlock || ipDropdown;
+      let currentIp = finalData.ipBlock || ipDropdown;
+      if (currentIp === 'All') {
+        currentIp = overviewData?.IP_Blocks?.[0] || '';
+      }
       
       let entry = {
         ...finalData,
@@ -333,9 +336,24 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
       let newIssues = [...issues];
       const effectiveEditingId = editingId || finalData.id;
+      const strEditingId = effectiveEditingId ? String(effectiveEditingId) : null;
       
-      if (effectiveEditingId && issues.some(it => it.id === effectiveEditingId)) {
-        newIssues = newIssues.map(it => it.id === effectiveEditingId ? { ...it, ...entry, id: effectiveEditingId } : it);
+      // [보안/정합성 오디트 반영] 동일 ID의 기존 노드가 있거나, 
+      // carryover 또는 eval 모드일 때 동일 targetIssue를 처리하는 다른 노드가 이미 존재한다면 중복 생성을 방지하고 기존 노드를 안전하게 덮어씀 (불변 업데이트)
+      let duplicateIndex = -1;
+      if (strEditingId) {
+        duplicateIndex = issues.findIndex(it => String(it.id) === strEditingId);
+      } else if (entry.entryMode === 'carryover' && entry.targetIssue) {
+        duplicateIndex = issues.findIndex(it => it.entryMode === 'carryover' && it.targetIssue === entry.targetIssue);
+      } else if (entry.entryMode === 'eval' && entry.targetIssue) {
+        duplicateIndex = issues.findIndex(it => it.entryMode === 'eval' && it.targetIssue === entry.targetIssue);
+      }
+
+      if (duplicateIndex !== -1) {
+        const targetNode = issues[duplicateIndex];
+        newIssues = newIssues.map((it, idx) => 
+          idx === duplicateIndex ? { ...it, ...entry, id: targetNode.id } : it
+        );
       } else {
         entry.id = Date.now();
         newIssues = [entry, ...issues];
@@ -370,22 +388,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm]);
 
 
-  const handleEdit = useCallback((item) => {
-    const isCurrentStage = !item.stage || item.stage === stage;
-    setMode((item.faId && isCurrentStage) ? 'fa' : item.entryMode);
-    setEditingId(item.id);
-    initialFormDataRef.current = { ...item };
-    setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData, stage]);
-
-  const handleView = useCallback((item) => {
-    const isCurrentStage = !item.stage || item.stage === stage;
-    setMode((item.faId && isCurrentStage) ? 'fa' : item.entryMode);
-    setEditingId(item.id);
-    initialFormDataRef.current = { ...item };
-    setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData, stage]);
-
   const handleHistoryCardClick = useCallback((item) => {
     const issueId = item.entryMode === 'new'
       ? `${item.ipBlock}.${project}.${item.issueNum}`
@@ -404,7 +406,13 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     setEditingId(null);
     initialFormDataRef.current = null;
 
-    if (finalStatus === 'CLOSED') {
+    if (isEvalTarget) {
+      setMode('eval');
+      setFormData({
+        ...commonFormData,
+        entryMode: 'eval',
+      });
+    } else if (finalStatus === 'CLOSED') {
       setMode('reopen');
       setFormData({
         ...commonFormData,
@@ -412,12 +420,6 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         phenomenon: item.phenomenon || '',
         rootCause: item.rootCause || '',
         disposition: 'Revision',
-      });
-    } else if (isEvalTarget) {
-      setMode('eval');
-      setFormData({
-        ...commonFormData,
-        entryMode: 'eval',
       });
     } else {
       setMode('carryover');
@@ -428,11 +430,77 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     }
   }, [project, safeData.loadedIssues, ipDropdown, latestIssueStates, setEditingId, setMode, setFormData]);
 
+  const handleEdit = useCallback((item) => {
+    const isCurrentStage = !item.stage || item.stage === stage;
+    const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+    const itemIssueId = isNewLike 
+      ? `${item.ipBlock}.${project}.${item.issueNum}` 
+      : item.targetIssue;
+
+    // [보안/감리]: 과거 차수의 원본 이슈 카드를 편집하려고 시도할 때의 리다이렉션 정합성 수립
+    if (!isCurrentStage) {
+      const isEvalTarget = (safeData.loadedIssues || []).includes(itemIssueId);
+      const isCarryoverTarget = !!(carryoverCandidateSet?.[itemIssueId]);
+      
+      if (isEvalTarget || isCarryoverTarget) {
+        handleHistoryCardClick(item);
+        return;
+      }
+    }
+
+    // [버그 수정/헌장 준수]: faId 매칭 조건은 오직 신규 등록군(new/fa)에만 제한 적용함.
+    // carryover, eval, reopen과 같은 전용 비즈니스 조치 카드는 faId 보유 여부와 무관하게 본래 탭 모드를 유지함.
+    const VALID_MODES = ['eval', 'carryover', 'new', 'fa', 'reopen'];
+    const rawMode = item.entryMode;
+    const hasValidFa = item.faId && (rawMode === 'new' || rawMode === 'fa');
+    const targetMode = (hasValidFa && isCurrentStage) ? 'fa' : rawMode;
+    const safeMode = VALID_MODES.includes(targetMode) ? targetMode : 'new';
+    
+    setMode(safeMode);
+    setEditingId(item.id);
+    initialFormDataRef.current = { ...item };
+    setFormData({ ...item });
+  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick]);
+
+  const handleView = useCallback((item) => {
+    const isCurrentStage = !item.stage || item.stage === stage;
+    const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+    const itemIssueId = isNewLike 
+      ? `${item.ipBlock}.${project}.${item.issueNum}` 
+      : item.targetIssue;
+
+    // [보안/감리]: 과거 차수의 원본 이슈 카드를 상세조회하려고 시도할 때의 리다이렉션 정합성 수립
+    if (!isCurrentStage) {
+      const isEvalTarget = (safeData.loadedIssues || []).includes(itemIssueId);
+      const isCarryoverTarget = !!(carryoverCandidateSet?.[itemIssueId]);
+      
+      if (isEvalTarget || isCarryoverTarget) {
+        handleHistoryCardClick(item);
+        return;
+      }
+    }
+
+    // [버그 수정/헌장 준수]: faId 매칭 조건은 오직 신규 등록군(new/fa)에만 제한 적용함.
+    // carryover, eval, reopen과 같은 전용 비즈니스 조치 카드는 faId 보유 여부와 무관하게 본래 탭 모드를 유지함.
+    const VALID_MODES = ['eval', 'carryover', 'new', 'fa', 'reopen'];
+    const rawMode = item.entryMode;
+    const hasValidFa = item.faId && (rawMode === 'new' || rawMode === 'fa');
+    const targetMode = (hasValidFa && isCurrentStage) ? 'fa' : rawMode;
+    const safeMode = VALID_MODES.includes(targetMode) ? targetMode : 'new';
+
+    setMode(safeMode);
+    setEditingId(item.id);
+    initialFormDataRef.current = { ...item };
+    setFormData({ ...item });
+  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick]);
+
+
+
   const handleTabSwitch = useCallback(async (newMode) => {
     if (mode === newMode) return;
     
-    // [27B 감리] Dirty 상태일 때만 확인 다이얼로그 (기존 로직 유지)
-    if (isTabEditing && isDirtyRef.current && !editingId) {
+    // [보안/감리] 수정 중이던 신규 작성 중이던 폼에 변경사항(Dirty)이 있으면 반드시 작성 취소 확인창 기동
+    if (isDirtyRef.current) {
       const confirmed = await showConfirm({
         title: "작성 취소",
         message: "작성 중인 내용이 있습니다. 저장하지 않고 정말 취소하시겠습니까?",
@@ -441,16 +509,12 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     
-    // [27B 감리] 편집 모드 유지 중에는 폼 초기화 생략 (데이터 손실 방지)
-    // 편집 중이 아닐 때만 폼을 초기화하여 깨끗한 상태로 전환
-    if (!isTabEditing) {
-      baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
-      initialFormDataRef.current = null;
-    }
+    // 탭 전환 시 폼 상태 및 editingId를 완벽히 씻어내어 신규 등록 목록 Overwrite 버그를 근본적으로 차단
+    baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
+    initialFormDataRef.current = null;
 
-    // [핵심 수정] setIsTabEditing(false) 제거 → 탭 전환 시에도 편집 모드 유지
     setMode(newMode);
-  }, [mode, editingId, showConfirm, ipDropdown, latestIssueStates, isTabEditing, baseResetForm, setMode]);
+  }, [mode, showConfirm, ipDropdown, latestIssueStates, baseResetForm, setMode]);
 
   const handleIpChange = useCallback(async (newIp) => {
     if (ipDropdown === newIp) return;
@@ -463,7 +527,10 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       const isSpecialMode = item.entryMode === 'eval' || item.entryMode === 'carryover' || item.entryMode === 'reopen';
       // 🚨 [보안/정합성] 이전 차수에서 연동되어 이월된 이슈는 이번 차수에서 'FA 연동 해제'를 시도할 수 없음!
       const isCurrentStage = !item.stage || item.stage === stage;
-      const isFaLinkDeletable = item.faId && isCurrentStage;
+      
+      // [버그 수정/헌장 준수]: faId 매칭을 통한 해제 대상은 이번 차수 신규/FA 등록군에 한함.
+      // carryover나 eval 조치 카드는 faId가 존재하더라도 연동 해제 대상이 아니라 판정(조치) 초기화 대상임!
+      const isFaLinkDeletable = item.faId && isCurrentStage && (item.entryMode === 'new' || item.entryMode === 'fa');
 
       const confirmed = await showConfirm({
         title: isFaLinkDeletable ? "FA 연동 해제" : (isSpecialMode ? "조치 내용 초기화" : "이슈 삭제"),
@@ -473,7 +540,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       });
 
       if (confirmed) {
-        const newIssues = issues.filter(it => it.id !== item.id);
+        const newIssues = issues.filter(it => String(it.id) !== String(item.id));
         
         if (onSubmit) await onSubmit({ ...safeData, issues: newIssues }, signal);
         
@@ -482,10 +549,17 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
           markFaLinkState(item.faId, false);
         }
         
-        if (editingId === item.id) cancelEdit(true);
+        if (editingId && String(editingId) === String(item.id)) cancelEdit(true);
       }
     });
   }, [showConfirm, project, issues, onSubmit, safeData, markFaLinkState, editingId, cancelEdit, executeSafe, stage]);
+
+  const handleReset = useCallback(async (id) => {
+    const item = issues.find(it => String(it.id) === String(id));
+    if (item) {
+      await handleDeleteRequest(item);
+    }
+  }, [issues, handleDeleteRequest]);
 
 
   const confirmAssigneeChange = () => {
@@ -650,6 +724,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
             onUnlinkFa={handleUnlinkFa}
             onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
             onSetEditingId={setEditingId}
+            onReset={handleReset}
           />
         </div>
 

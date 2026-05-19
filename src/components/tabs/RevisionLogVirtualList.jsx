@@ -47,6 +47,7 @@ const RevisionLogVirtualList = ({
   const [expandedItems, setExpandedItems] = useState({});
   const [expandedSections, setExpandedSections] = useState({
     actionRequired: true,
+    carryoverReview: true,
     newFindings: true,
     stillOpen: true,
     resolved: false,
@@ -129,30 +130,42 @@ const RevisionLogVirtualList = ({
     stillOpenIssues,
     resolvedIssues,
     deferredIssues,
+    actedThisStage,
   } = useMemo(() => {
     const actedThisStage = {};
     (issues || []).forEach(i => {
       const id = (i.entryMode === 'new' || i.entryMode === 'fa')
         ? `${i.ipBlock}.${project}.${i.issueNum}`
         : i.targetIssue;
-      if (id) actedThisStage[id] = true;
+      if (!id) return;
+
+      // [보안/렌더 가드]: 이월 검토(carryover) 건인데 아직 아무 심사 결정(carryoverAction)을 내리지 않은 미결 상태라면,
+      // 현재 차수에서 "조치/심사가 완료된 액션(acted)"으로 취급해서는 안 됩니다!
+      if (i.entryMode === 'carryover') {
+        const actionEmpty = !i.carryoverAction || i.carryoverAction.trim() === '';
+        if (i.carryoverStatus === 'OPEN' && actionEmpty) {
+          return; // 맵에 등록하지 않고 건너뜀 (미결 상태 유지)
+        }
+      }
+
+      actedThisStage[id] = i; // 조치가 완료된 액션 객체만 매핑
     });
 
     const pendingEvalItems = (safeData.loadedIssues || [])
-      .filter(id => needsEvalSet[id] && !actedThisStage[id])
+      .filter(id => {
+        if (!needsEvalSet[id]) return false;
+        return true;
+      })
       .filter(id => {
         const ip = id.split('.')[0];
         return ipDropdown === 'All' ? true : ip === ipDropdown;
-      })
-      .filter(() => statusFilter === 'ALL' || statusFilter === 'OPEN');
+      });
 
     const pendingCarryoverItems = Object.keys(carryoverCandidateSet || {})
-      .filter(id => !actedThisStage[id])
       .filter(id => {
         const ip = id.split('.')[0];
         return ipDropdown === 'All' ? true : ip === ipDropdown;
-      })
-      .filter(() => statusFilter === 'ALL' || statusFilter === 'OPEN');
+      });
 
     const curFiltered = (sortedIssues || [])
       .filter(i => {
@@ -171,13 +184,25 @@ const RevisionLogVirtualList = ({
           : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
         if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
 
+        const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+        const id = isNewLike ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+
         // 상태 필터링 (최종 상태가 CLOSED인 것)
         const st = getIssueStatus(item);
+
+        // [중복 제거] 유지 심사 대상 및 이월 검토 대상은 위쪽 독립 섹션에만 노출되므로 하단 조치 완료에서 배제!
+        // 단, 이번 차수에서 종결(CLOSED)로 완결된 카드는 종결 리스트에도 복수 노출되도록 허용합니다.
+        const isCarryoverTarget = !!carryoverCandidateSet?.[id];
+        if (isCarryoverTarget && st !== 'CLOSED') return false;
+
+        const isLoadedIssue = (safeData.loadedIssues || []).includes(id);
+        if (isLoadedIssue && st !== 'CLOSED') return false;
+
         if (statusFilter === 'ALL' || statusFilter === 'CLOSED') return st === 'CLOSED';
         return false;
       });
 
-    // ── [정합성 설계] 평가 유보(DEFERRED) 이슈 추출 (현재 차수에서 선언된 것만) ──
+    // ── [정합성 설계] 평가 유보(DEFERRED) 이슈 추출 ──
     const allDeferred = Object.values(latestIssueStates || {})
       .filter(item => {
         // IP 필터링
@@ -185,6 +210,16 @@ const RevisionLogVirtualList = ({
           ? item.ipBlock
           : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
         if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
+
+        const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+        const id = isNewLike ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
+
+        // [중복 제거] 유지 심사 대상 및 이월 검토 대상은 배제!
+        const isCarryoverTarget = !!carryoverCandidateSet?.[id];
+        if (isCarryoverTarget) return false;
+
+        const isLoadedIssue = (safeData.loadedIssues || []).includes(id);
+        if (isLoadedIssue) return false;
         
         // 차수(Stage) 필터링: 현재 차수에서 직접 유보된 건만 노출
         const isCurrentStage = !item.stage || item.stage === stage;
@@ -206,7 +241,7 @@ const RevisionLogVirtualList = ({
     allResolved.sort(sortFn);
     allDeferred.sort(sortFn);
 
-    // ── [정합성 설계] 관리 중인 기술 부채는 현재 차점 기준 OPEN 상태인 모든 누적 이슈에서 추출 (전체 이력 누적 및 중복 제거) ──
+    // ── [정합성 설계] 관리 중인 기술 부채는 현재 차점 기준 OPEN 상태인 모든 누적 이슈에서 추출 ──
     const allStillOpen = Object.values(latestIssueStates || {})
       .filter(item => {
         // IP 필터링
@@ -214,22 +249,28 @@ const RevisionLogVirtualList = ({
           ? item.ipBlock
           : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
         if (ipDropdown !== 'All' && ip !== ipDropdown) return false;
-        
-        // 상태 필터링 (최종 상태가 OPEN인 것)
-        const st = getIssueStatus(item);
-        if (st !== 'OPEN') return false;
-        if (statusFilter !== 'ALL' && statusFilter !== 'OPEN') return false;
 
         const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
         const id = isNewLike ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-
-        // [중복 제거 1] 이전 차수 이월이고 현재 차수 미평가 상태인 건은 '조치 필요'에 뜨므로 제외
-        const isPendingCarryover = (carryoverCandidateSet[id] || needsEvalSet[id]) && !actedThisStage[id];
-        if (isPendingCarryover) return false;
+        
+        // [중복 제거] 이전 차수 이월 수정 평가 대상(eval)은 '이월 검토 항목' 섹션에만 노출
+        const isLoadedIssue = (safeData.loadedIssues || []).includes(id);
+        if (isLoadedIssue) return false;
 
         // [중복 제거 2] 이번 차수 신규 오픈 건도 '조치 필요'에 뜨므로 제외
         const isNewFinding = isNewLike && item.stage === stage;
         if (isNewFinding) return false;
+
+        // 상태 필터링 및 유지 심사 대상 영구 존속 가드
+        const st = getIssueStatus(item);
+        const isCarryoverTarget = !!carryoverCandidateSet?.[id];
+        
+        if (isCarryoverTarget) {
+          return true; // 유지 심사 대상은 판정(Close 등) 여부와 상관없이 무조건 관리형 부채에 존속!
+        }
+
+        if (st !== 'OPEN') return false;
+        if (statusFilter !== 'ALL' && statusFilter !== 'OPEN') return false;
 
         return true;
       });
@@ -245,10 +286,11 @@ const RevisionLogVirtualList = ({
     return {
       pendingEvalItems,
       pendingCarryoverItems,
-      newFindings: curFiltered.filter(item => getIssueStatus(item) === 'OPEN' && (item.entryMode === 'new' || item.entryMode === 'fa')),
+      newFindings: curFiltered.filter(item => (item.entryMode === 'new' || item.entryMode === 'fa') && item.stage === stage),
       stillOpenIssues: allStillOpen,
       resolvedIssues: allResolved,
       deferredIssues: allDeferred,
+      actedThisStage,
     };
   }, [issues, safeData, project, ipDropdown, statusFilter, needsEvalSet, carryoverCandidateSet, sortedIssues, latestIssueStates, stage]);
 
@@ -270,14 +312,14 @@ const RevisionLogVirtualList = ({
 
   return (
     <div className="space-y-4">
-      {/* 1. 이월 검토 항목 (Pending Evaluation / Carryover) */}
-      {(pendingEvalItems.length > 0 || pendingCarryoverItems.length > 0) && (
+      {/* 1. 이월 검토 항목 (Evaluation Pending) - 오직 pendingEvalItems 만! */}
+      {pendingEvalItems.length > 0 && (
         <div className="bg-amber-50/10 border border-amber-100 rounded-xl p-4">
           <SectionHeader
             section="actionRequired"
             title="이월 검토 항목"
             icon={<ArrowRightCircle size={15} />}
-            count={pendingEvalItems.length + pendingCarryoverItems.length}
+            count={pendingEvalItems.length}
             colorClass="border-amber-100 bg-amber-50/20 hover:bg-amber-50/50"
             textColorClass="text-amber-700"
             iconColorClass="text-amber-400 group-hover:text-amber-700"
@@ -288,44 +330,25 @@ const RevisionLogVirtualList = ({
           {expandedSections.actionRequired && (
             <div className="space-y-2 mt-2">
               {pendingEvalItems.map(id => {
-                const item = findOriginItem(id);
+                const actedAction = actedThisStage[id];
+                const item = actedAction || latestIssueStates[id] || findOriginItem(id);
                 if (!item) return null;
                 return (
                   <IssueSummaryCard
-                    key={id}
+                    key={`eval-${id}`}
                     item={item}
                     project={project}
                     isReadOnly={isReadOnly}
                     editingId={editingId}
                     activeTargetIssue={activeTargetIssue}
-                    onEdit={() => handlers.handleHistoryCardClick(item)}
+                    onEdit={actedAction ? () => handlers.handleEdit(item) : () => handlers.handleHistoryCardClick(item)}
+                    onDelete={isReadOnly ? undefined : (actedAction ? () => handlers.handleDeleteRequest(actedAction) : undefined)}
                     currentStage={stage}
-                    needsEval={true}
+                    needsEval={!actedAction}
+                    isAssessed={!!actedAction}
                     expandable={true}
-                    expanded={!!expandedItems[item.id]}
-                    onToggleExpand={() => toggleExpand(item.id)}
-                    onShowHistoryReport={onShowHistoryReport}
-                    timeline={getIssueTimeline(id)}
-                  />
-                );
-              })}
-              {pendingCarryoverItems.map(id => {
-                const item = findOriginItem(id);
-                if (!item) return null;
-                return (
-                  <IssueSummaryCard
-                    key={id}
-                    item={item}
-                    project={project}
-                    isReadOnly={isReadOnly}
-                    editingId={editingId}
-                    activeTargetIssue={activeTargetIssue}
-                    onEdit={() => handlers.handleHistoryCardClick(item)}
-                    currentStage={stage}
-                    needsEval={true}
-                    expandable={true}
-                    expanded={!!expandedItems[item.id]}
-                    onToggleExpand={() => toggleExpand(item.id)}
+                    expanded={!!expandedItems[item.id || id]}
+                    onToggleExpand={() => toggleExpand(item.id || id)}
                     onShowHistoryReport={onShowHistoryReport}
                     timeline={getIssueTimeline(id)}
                   />
@@ -335,6 +358,7 @@ const RevisionLogVirtualList = ({
           )}
         </div>
       )}
+
 
       {/* 2. 신규 등록 리스트 */}
       {newFindings.length > 0 && (
@@ -399,7 +423,8 @@ const RevisionLogVirtualList = ({
             <div className="space-y-2 mt-2">
               {stillOpenIssues.map(item => {
                 const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
+                const isPendingTarget = !!(needsEvalSet?.[itemIssueId] || carryoverCandidateSet?.[itemIssueId]);
+                const isItemReadOnly = isReadOnly || (!isPendingTarget && !issues.some(x => x.id === item.id));
                 return (
                   <IssueSummaryCard
                     key={item.id}
@@ -411,7 +436,9 @@ const RevisionLogVirtualList = ({
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
                     currentStage={stage}
-                    needsEval={false}
+                    isCarryover={!!carryoverCandidateSet?.[itemIssueId]}
+                    needsEval={!!(carryoverCandidateSet?.[itemIssueId] && !actedThisStage?.[itemIssueId])}
+                    isAssessed={!!(carryoverCandidateSet?.[itemIssueId] && actedThisStage?.[itemIssueId])}
                     expandable={true}
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
@@ -444,7 +471,8 @@ const RevisionLogVirtualList = ({
             <div className="space-y-2 mt-2">
               {deferredIssues.map(item => {
                 const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
+                const isPendingTarget = !!(needsEvalSet?.[itemIssueId] || carryoverCandidateSet?.[itemIssueId]);
+                const isItemReadOnly = isReadOnly || (!isPendingTarget && !issues.some(x => x.id === item.id));
                 return (
                   <IssueSummaryCard
                     key={item.id}
@@ -455,8 +483,8 @@ const RevisionLogVirtualList = ({
                     activeTargetIssue={activeTargetIssue}
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
-                    currentStage={stage}
-                    needsEval={!!needsEvalSet[itemIssueId]}
+                    needsEval={false}
+                    isAssessed={false}
                     expandable={true}
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}
@@ -489,7 +517,8 @@ const RevisionLogVirtualList = ({
             <div className="space-y-2 mt-2">
               {resolvedIssues.map(item => {
                 const itemIssueId = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-                const isItemReadOnly = isReadOnly || !issues.some(x => x.id === item.id);
+                const isPendingTarget = !!(needsEvalSet?.[itemIssueId] || carryoverCandidateSet?.[itemIssueId]);
+                const isItemReadOnly = isReadOnly || (!isPendingTarget && !issues.some(x => x.id === item.id));
                 return (
                   <IssueSummaryCard
                     key={item.id}
@@ -500,8 +529,8 @@ const RevisionLogVirtualList = ({
                     activeTargetIssue={activeTargetIssue}
                     onEdit={isItemReadOnly ? handlers.handleView : handlers.handleEdit}
                     onDelete={isItemReadOnly ? undefined : handlers.handleDeleteRequest}
-                    currentStage={stage}
-                    needsEval={!!needsEvalSet[itemIssueId]}
+                    needsEval={false}
+                    isAssessed={false}
                     expandable={true}
                     expanded={!!expandedItems[item.id]}
                     onToggleExpand={() => toggleExpand(item.id)}

@@ -14,6 +14,8 @@ export default React.memo(function IssueSummaryCard({
   currentStage,
   historyStage,
   needsEval = false,
+  isAssessed = false,
+  isCarryover = false,
   onShowHistoryReport,
   timeline = [],
 }) {
@@ -119,9 +121,46 @@ export default React.memo(function IssueSummaryCard({
 
   // ── Actionable Decision Badge Injection (V1.7.3) ──
   if (needsEval) {
+    if (item.entryMode === 'carryover' || isCarryover) {
+      badges.unshift({
+        label: '🔍 유지 심사 필요',
+        style: 'bg-indigo-100 text-indigo-800 border-indigo-300 font-extrabold animate-pulse shadow-sm'
+      });
+    } else {
+      badges.unshift({
+        label: '⚠️ 판정 필요',
+        style: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold animate-pulse shadow-sm'
+      });
+    }
+  } else if (isAssessed) {
+    let label = '✅ 판정 완료';
+    let badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold shadow-sm';
+    
+    if (item.entryMode === 'eval') {
+      const res = item.assessment || 'N/A';
+      label = `✅ 판정 완료: ${res}`;
+      if (res === 'Deferred') {
+        badgeColor = 'bg-blue-100 text-blue-800 border-blue-300 font-extrabold shadow-sm';
+      } else if (res === 'Fixed') {
+        badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold shadow-sm';
+      } else {
+        badgeColor = 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold shadow-sm';
+      }
+    } else if (item.entryMode === 'carryover') {
+      const act = item.carryoverAction || 'N/A';
+      label = `✅ 유지 심사 완료: ${act}`;
+      if (act === 'Close') {
+        badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold shadow-sm';
+      } else if (act === 'Keep Open') {
+        badgeColor = 'bg-orange-100 text-orange-800 border-orange-300 font-extrabold shadow-sm';
+      } else {
+        badgeColor = 'bg-purple-100 text-purple-800 border-purple-300 font-extrabold shadow-sm';
+      }
+    }
+    
     badges.unshift({
-      label: '⚠️ 판정 필요',
-      style: 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold animate-pulse shadow-sm'
+      label,
+      style: badgeColor
     });
   } else if (item.entryMode === 'carryover' && item.carryoverStatus === 'OPEN') {
     badges.unshift({
@@ -174,6 +213,12 @@ export default React.memo(function IssueSummaryCard({
 
   const getBgTint = () => {
     if (needsEval) return 'bg-red-50/40';
+    if (isAssessed) {
+      if (item.entryMode === 'eval' && item.assessment === 'Deferred') return 'bg-blue-50/20 hover:bg-blue-50/30 transition-all duration-200';
+      if (item.entryMode === 'eval' && item.assessment === 'Fixed') return 'bg-green-50/20 hover:bg-green-50/30 transition-all duration-200';
+      if (item.entryMode === 'carryover' && item.carryoverAction === 'Close') return 'bg-green-50/20 hover:bg-green-50/30 transition-all duration-200';
+      return 'bg-slate-50/60 hover:bg-slate-50/80 transition-all duration-200';
+    }
     if (overallStatus === 'CLOSED') return 'bg-green-50/30';
     if (overallStatus === 'DEFERRED') return 'bg-blue-50/30';
     return 'bg-orange-50/30';
@@ -408,20 +453,24 @@ export default React.memo(function IssueSummaryCard({
             {/* 편집 모드: 수정 / 삭제 버튼 (이벤트 버블링 방지 필수) */}
             {showActions && (
               <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
-                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                  title="수정"
-                >
-                  <Edit2 size={13} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete?.(item); }}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                  title="삭제"
-                >
-                  <Trash2 size={13} />
-                </button>
+                {onEdit && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    title="수정"
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(item); }}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    title="삭제"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </>
             )}
             {expandable && (

@@ -48,10 +48,15 @@ export default function IssueForm({
   onUnlinkFa,
   onOpenAssigneeModal,
   onChange,
-  onSetEditingId // 부모의 editingId를 동기화하기 위한 콜백
+  onSetEditingId, // 부모의 editingId를 동기화하기 위한 콜백
+  onReset
 }) {
   const [localFormData, setFormData] = useState(initialData);
-  const [activeStage, setActiveStage] = useState(initialData?.stage || stage);
+  // [버그 수정] carryover 또는 eval 모드처럼 과거 차수 데이터를 기반으로 새 조치/평가를 작성하는 신규 작성 프로세스에서는
+  // activeStage가 과거 차수로 고정되어 비활성화 잠금(isTimeTraveling)되는 것을 방지하기 위해 항상 현재 차수인 stage로 활성화 복귀함
+  const [activeStage, setActiveStage] = useState(
+    (mode === 'carryover' || mode === 'eval') ? stage : (initialData?.stage || stage)
+  );
 
   // ── [보안/성능] derived state: 현재 이슈의 차수별 이력 타임라인 생성 ──
   const currentIssueId = useMemo(() => {
@@ -91,13 +96,24 @@ export default function IssueForm({
     return list;
   }, [currentIssueId, historyBlocks, issues, project, stage]);
 
-  const isTimeTraveling = activeStage !== stage;
+  // [버그 수정] carryover 또는 eval 모드와 같이 새 조치 등록/작성 프로세스에서는 시간 여행 제약이 기동되지 않아야 함
+  const isTimeTraveling = (mode !== 'carryover' && mode !== 'eval') && (activeStage !== stage);
   const displayIsReadOnly = isReadOnly || isTimeTraveling;
 
   const displayData = useMemo(() => {
-    const matched = timeline.find(t => t.stage === activeStage);
-    return matched ? matched.data : localFormData;
-  }, [activeStage, timeline, localFormData]);
+    if (editingId) {
+      return localFormData;
+    }
+    // [버그 수정] 사용자가 실제로 과거 이력을 조회(시간 여행) 중일 때만 timeline에서 데이터를 섀도잉해 줌.
+    // 현재 시점의 이슈를 등록하거나 이월 조치를 취할 때는 localFormData(실시간 입력 데이터)를 그대로 반환하여
+    // 라디오 버튼(controlled input)의 checked 상태 등이 지연 없이 정상 반영되도록 보정함.
+    const isHistoricalView = activeStage !== stage;
+    if (isHistoricalView) {
+      const matched = timeline.find(t => t.stage === activeStage);
+      if (matched) return matched.data;
+    }
+    return localFormData;
+  }, [editingId, activeStage, stage, timeline, localFormData]);
 
   // ── [치트키] 렌더링 시에는 displayData를 formData로 섀도잉하여 시간 여행 스왑 자동 반영 ──
   const formData = displayData;
@@ -112,35 +128,15 @@ export default function IssueForm({
     
     if (lastInitialId.current !== currentId) {
       setFormData(initialData);
-      setActiveStage(initialData.stage || stage);
+      setActiveStage((mode === 'carryover' || mode === 'eval') ? stage : (initialData.stage || stage));
       lastInitialId.current = currentId;
     }
-  }, [initialData, editingId, stage]);
+  }, [initialData, editingId, stage, mode]);
 
   // ── [제거] 무한 루프 원인이 되는 실시간 자동 동기화 useEffect ──
   // 대신 handleInput 및 개별 변경 핸들러에서 명시적으로 onChange를 호출함
 
-  // Business Logic: Fixed -> Closed sync
-  useEffect(() => {
-    // 1. Fixed 상태인 경우 무조건 Closed로 동기화 (단, 이미 Closed가 아닐 때만)
-    if (formData.assessment === 'Fixed') {
-      if (formData.disposition !== 'Closed') {
-        setFormData(prev => {
-          const next = { ...prev, disposition: 'Closed' };
-          if (onChange) onChange(next);
-          return next;
-        });
-      }
-    } 
-    // 2. Eval 모드에서 Closed인 경우 Revision으로 복구 (단, 이미 Revision이 아닐 때만)
-    else if (formData.entryMode === 'eval' && formData.disposition === 'Closed') {
-      setFormData(prev => {
-        const next = { ...prev, disposition: 'Revision' };
-        if (onChange) onChange(next);
-        return next;
-      });
-    }
-  }, [formData.assessment, formData.entryMode, formData.disposition, onChange]);
+  // ── [제거] 사용자의 단순화 철학에 따라 폼 입력 락을 유발하는 useEffect 자동 동기화 로직 완전 제거 ──
 
   const handleInput = (e) => {
     const { name, value } = e.target;
@@ -187,7 +183,21 @@ export default function IssueForm({
 
   const isSaveDisabled = useMemo(() => {
      if (isArchived && !editingId) return true;
-     if (mode === 'eval') return !formData.targetIssue || !formData.assessment || !(formData.comment?.trim());
+     if (mode === 'eval') {
+       const hasTarget = !!formData.targetIssue;
+       const hasAssess = !!formData.assessment;
+       if (!hasTarget || !hasAssess) return true;
+
+       // assessment가 Deferred(유보)인 경우 comment 또는 deferReason 둘 중 하나만 입력되어 있어도 활성화
+       if (formData.assessment === 'Deferred') {
+         const hasComment = !!(formData.comment?.trim());
+         const hasDeferReason = !!(formData.deferReason?.trim());
+         return !(hasComment || hasDeferReason);
+       }
+
+       // 그 외의 일반 평가 항목은 기존과 동일하게 comment(평가 의견) 입력을 필수 처리
+       return !(formData.comment?.trim());
+     }
      if (mode === 'carryover') {
        if (!formData.targetIssue || !formData.carryoverAction) return true;
        if (formData.carryoverAction === 'Close' && (!formData.comment || formData.comment.trim() === '')) return true;
@@ -803,7 +813,7 @@ export default function IssueForm({
               </div>
             </div>
 
-            <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} disabled={formData.assessment === 'Fixed'} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
+            <div><label className={lc}>Disposition (처리방향)</label><select name="disposition" value={formData.disposition} onChange={handleInput} className={`w-full ${ic}`}>{availableDispositions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select></div>
             <CustomerAlignmentFields formData={formData} handleInput={handleInput} disabled={displayIsReadOnly} />
           </div>
         ) : mode === 'carryover' ? (
@@ -833,11 +843,21 @@ export default function IssueForm({
                 }
               }} className={`w-full font-mono ${ic}`}>
                 <option value="">이월된 이슈 선택...</option>
-                {issues.filter(i => i.entryMode === 'carryover').map(it => (
-                  <option key={it.targetIssue} value={it.targetIssue} style={it.carryoverAction === 'Close' ? { color: '#15803d', fontWeight: '700' } : { color: '#c2410c', fontWeight: '700' }}>
-                    {it.carryoverAction === 'Close' ? `🟢 [이월-DONE] ${it.targetIssue}` : `🟠 [이월-OPEN] ${it.targetIssue}`}
-                  </option>
-                ))}
+                {(() => {
+                  const seen = new Set();
+                  return issues
+                    .filter(i => i.entryMode === 'carryover')
+                    .filter(it => {
+                      if (seen.has(it.targetIssue)) return false;
+                      seen.add(it.targetIssue);
+                      return true;
+                    })
+                    .map(it => (
+                      <option key={it.targetIssue} value={it.targetIssue} style={it.carryoverAction === 'Close' ? { color: '#15803d', fontWeight: '700' } : { color: '#c2410c', fontWeight: '700' }}>
+                        {it.carryoverAction === 'Close' ? `🟢 [이월-DONE] ${it.targetIssue}` : `🟠 [이월-OPEN] ${it.targetIssue}`}
+                      </option>
+                    ));
+                })()}
                 {Object.keys(carryoverCandidateSet || {})
                   .filter(id => !issues.some(i => i.entryMode === 'carryover' && i.targetIssue === id))
                   .sort()
@@ -933,6 +953,19 @@ export default function IssueForm({
 
       {/* ───────── 하단 버튼 영역 (배포 버전 복구) ───────── */}
       <div className="flex items-center gap-3 mt-6 pt-4 border-t border-gray-100">
+        {/* 판정 초기화 (Rose, 중간) */}
+        {editingId && (formData.assessment || formData.carryoverAction) && !displayIsReadOnly && (
+          <button
+            type="button"
+            onClick={() => {
+              if (onReset) onReset(formData.id);
+            }}
+            className="px-5 py-3 rounded-xl text-sm font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 active:scale-[0.98] transition-all border border-rose-200"
+          >
+            판정 초기화
+          </button>
+        )}
+
         {/* 리스트에 추가 / 수정 사항 저장 (왼쪽, 넓게) */}
         <button
           onClick={() => onSave(formData)}
