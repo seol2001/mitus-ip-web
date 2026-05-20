@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "lastUpdated": "2026-05-19T09:52:23.730Z",
+  "lastUpdated": "2026-05-20T03:38:22.945Z",
   "activeFeatures": [
     "ui-fragmentation",
     "workspace-fragmentation",
@@ -12,7 +12,8 @@
     "bug-03-zombie-lock-fix",
     "tabs",
     "components",
-    "revision-log-reset-fix"
+    "revision-log-reset-fix",
+    "remove-new-column"
   ],
   "primaryFeature": "ui-fragmentation",
   "features": {
@@ -379,6 +380,44 @@
         "lastUpdated": "2026-05-19T09:52:23.730Z"
       },
       "completedAt": "2026-05-19T09:52:23.726Z"
+    },
+    "remove-new-column": {
+      "phase": "design",
+      "matchRate": null,
+      "iterationCount": 0,
+      "documents": {},
+      "taskChain": [
+        {
+          "phase": "plan",
+          "status": "completed",
+          "createdAt": "2026-05-20T03:37:29.309Z",
+          "completedAt": "2026-05-20T03:38:16.741Z"
+        },
+        {
+          "phase": "design",
+          "status": "active",
+          "createdAt": "2026-05-20T03:37:29.309Z"
+        },
+        {
+          "phase": "do",
+          "status": "pending",
+          "createdAt": "2026-05-20T03:37:29.309Z"
+        },
+        {
+          "phase": "check",
+          "status": "pending",
+          "createdAt": "2026-05-20T03:37:29.309Z"
+        },
+        {
+          "phase": "report",
+          "status": "pending",
+          "createdAt": "2026-05-20T03:37:29.309Z"
+        }
+      ],
+      "timestamps": {
+        "started": "2026-05-20T03:37:29.310Z",
+        "lastUpdated": "2026-05-20T03:38:16.741Z"
+      }
     }
   },
   "pipeline": {
@@ -389,7 +428,7 @@
   "session": {
     "startedAt": "2026-05-06T00:04:01.643Z",
     "onboardingCompleted": false,
-    "lastActivity": "2026-05-19T09:52:23.730Z"
+    "lastActivity": "2026-05-20T03:38:22.945Z"
   },
   "history": [
     {
@@ -714,6 +753,25 @@
       "phase": "report",
       "nextPhase": "completed",
       "timestamp": "2026-05-19T09:52:23.726Z"
+    },
+    {
+      "feature": "remove-new-column",
+      "from": "plan",
+      "to": "design",
+      "timestamp": "2026-05-20T03:38:16.737Z"
+    },
+    {
+      "feature": "remove-new-column",
+      "action": "phase_complete",
+      "phase": "plan",
+      "nextPhase": "design",
+      "timestamp": "2026-05-20T03:38:16.740Z"
+    },
+    {
+      "feature": "remove-new-column",
+      "from": "design",
+      "to": "design",
+      "timestamp": "2026-05-20T03:38:22.945Z"
     }
   ]
 }

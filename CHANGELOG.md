@@ -35,6 +35,22 @@
 
 ## 📅 버전별 수정 히스토리 (Revision Log)
 
+### [Ver 1.7.5] 🚀 신규: IP Index Tab 내 불필요한 미결 이슈 현황 카드 삭제 및 Revision Log 프리미엄 팝오버/마일스톤 통계 리포트 혁신
+- **배포 날짜**: 2026-05-20
+- **핵심 수정 사항**:
+  - **IP Index Tab 내 불필요한 '미결 이슈 현황' 카드 삭제**:
+    - `IpIndexTab.jsx` 컴포넌트 하단의 불필요한 `미결 이슈 현황` 카드 마크업 및 이와 연동되었던 불필요한 파생 상태 변수들(`pendingIssues`, `futureFixes`, `carryOverCount`)을 깨끗하게 정리하여 화면 공간 낭비를 해소하고 UX를 한 단계 정돈했습니다. (레이아웃 픽셀 깨짐이나 타 영역의 스타일 Regression 없이 UI 무결성 100% 보존)
+  - **Hierarchical Open (Debt) Metrics Breakdown (신규 구현)**:
+    - 마일스톤 품질 리포트 내 `Open (Debt)` 부채 총합 지표의 하위 계층 구조(Hierarchy) 상시 노출(Permanent Display)을 구현했습니다.
+    - `useLogData.js` 내의 `stats` memoization 블록에 `debtDetails` 맵 계산 연산을 장착하여 상단 뱃지와 하단 테이블이 실시간 판정 내용 및 이전 차수 이월 미판정 건을 종류별(`Revision`, `Deferred`, `SW Workaround`, `Test Screening`, `System Mitigation`, `Other/TBD`)로 명확히 분석하도록 구현했습니다.
+  - **상단 요약 뱃지 호버용 프리미엄 다크 글래스모피즘 팝오버 (`DebtDetailsPopover`) 도입**:
+    - 상단 요약 배지(OPEN)에 마우스 호버 시 세부 기술 부채 현황을 한눈에 볼 수 있도록 반투명 다크 글래스모피즘 스킨을 가미한 `DebtDetailsPopover.jsx` 컴포넌트를 신규 설계하고 이식하였습니다.
+  - **Revision Log 상/하단 실시간 통계 정합성 완벽 동기화**:
+    - 상단 필터별 통계 배지(`stats`)와 하단의 마일스톤 품질 리포트 요약 테이블 CURRENT 행의 실시간 통계 수치 불일치 문제를 `allStats` 메모이제이션 블록의 집계 대상을 SSoT(Single Source of Truth) 상태 맵인 `latestIssueStates`로 변경하여 완벽한 실시간 연동을 실현했습니다.
+  - **Milestone Metrics Table Visual Optimization & Premium Glassmorphism Reskin**:
+    - `MilestoneMetricsTable.jsx` 테이블 컬럼 제목을 2줄 레이아웃 `Open (Debt) (Rev / Def / SW / TS / SM / Oth)`으로 세분화하고, 총합 뱃지와 슬래시 구분 디테일 건수를 가로 1줄로 배치하여 세로 높이를 35% 이상 획기적으로 압축하는 수평 슬림 레이아웃을 전격 주입했습니다.
+    - 테이블 외곽 테두리를 흰색 투명 반사광 (`border-white/40 bg-white/40`) 및 극대화된 `backdrop-blur-2xl` 처리를 가미해 주변 대시보드 테마와 고급스럽게 융합시켰습니다.
+
 ### [Ver 1.7.4] 🚀 신규: 관리형 기술 부채 유지 심사 용어 정립 및 종결 이슈 논리적 이중 노출 보강
 - **배포 날짜**: 2026-05-20
 - **핵심 수정 사항**:

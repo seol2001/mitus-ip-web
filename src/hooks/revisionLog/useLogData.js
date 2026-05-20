@@ -30,6 +30,16 @@ export const useLogData = (safeData, ipDropdown, validIps, project, stage) => {
   const stats = useMemo(() => {
     let total = 0, open = 0, closed = 0, deferred = 0;
     
+    // 신규 세부 집계 객체
+    const debtDetails = {
+      Revision: 0,
+      Deferred: 0,
+      'SW Workaround': 0,
+      'Test Screening': 0,
+      'System Mitigation': 0,
+      'Other/TBD': 0
+    };
+    
     Object.values(latestIssueStates).forEach(item => {
       const isNewLike = item?.entryMode === 'new' || item?.entryMode === 'fa';
       const ip = isNewLike 
@@ -48,14 +58,29 @@ export const useLogData = (safeData, ipDropdown, validIps, project, stage) => {
           } else {
             // 이전 차수에서 유보되었으나 현재 차수에서 아직 최종 판정이 대기 중인 건은 OPEN으로 합산
             open++;
+            debtDetails['Deferred']++;
           }
         }
-        else if (status === 'OPEN') open++;
+        else if (status === 'OPEN') {
+          open++;
+          const disp = item?.disposition;
+          if (disp === 'Revision') {
+            debtDetails['Revision']++;
+          } else if (disp === 'SW Workaround') {
+            debtDetails['SW Workaround']++;
+          } else if (disp === 'Test Screening') {
+            debtDetails['Test Screening']++;
+          } else if (disp === 'System Mitigation') {
+            debtDetails['System Mitigation']++;
+          } else {
+            debtDetails['Other/TBD']++;
+          }
+        }
         else if (status === 'CLOSED') closed++;
       }
     });
     
-    return { total, open, closed, deferred };
+    return { total, open, closed, deferred, debtDetails };
   }, [latestIssueStates, ipDropdown, validIps, stage]);
 
   // 3. 정렬된 이슈 리스트 (Memoized)

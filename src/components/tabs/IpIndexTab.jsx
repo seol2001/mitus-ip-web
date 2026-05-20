@@ -3,17 +3,52 @@ import { ipCategoryNameMap, makeDefaultIpIndex } from '../../data/mockData';
 import { X } from '../Icons';
 import ActionBar from '../ActionBar';
 import IssueSummaryCard from '../IssueSummaryCard';
-import { BookOpen, Lock, Copy, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Lock, Copy, Plus, Trash2, ChevronDown, Sparkles, Activity, CheckCircle, Clock, ShieldCheck, ArrowRightCircle } from 'lucide-react';
 import { DEFAULT_IP_CONTENTS_SCHEMA } from '../../data/schemaConfig';
 import { useAutoSave, clearAutoSave } from '../../hooks/useAutoSave';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { getIssueStatus } from '../../logic/revisionLogLogic';
 import AutoSaveRecoveryModal from '../AutoSaveRecoveryModal';
+import { useLogData } from '../../hooks/revisionLog/useLogData';
+import MilestoneMetricsTable from './MilestoneMetricsTable';
 
 // ─── [D&D] 드래그 앤 드롭 라이브러리 임포트 ───
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+// ── 섹션 헤더 컴포넌트 (독립 플로팅 카드 매칭 프리미엄 레프트 정렬 및 세로 엑센트 바 이식) ──
+const SectionHeader = ({ section, title, icon, count, accentColorClass, badgeClass, isExpanded, onToggle }) => (
+  <div
+    onClick={() => onToggle(section)}
+    className="flex items-center justify-between cursor-pointer select-none group border-b border-slate-100 pb-3"
+    aria-expanded={isExpanded}
+    aria-controls={`accordion-content-${section}`}
+  >
+    <div className="flex items-center gap-3">
+      {/* 1. 세련된 세로 엑센트 바 (Vertical Accent Bar) */}
+      <div className={`w-1.5 h-6 rounded-full transition-transform duration-300 group-hover:scale-y-110 ${accentColorClass}`} />
+      
+      <div className="flex items-center gap-2">
+        <span className="p-1.5 rounded-lg bg-slate-50 group-hover:bg-white transition-colors duration-200 flex items-center justify-center">
+          {icon}
+        </span>
+        <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+          {title}
+        </h3>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>
+          {count}건
+        </span>
+      </div>
+    </div>
+    
+    <div className="flex items-center gap-2">
+      <span className={`text-slate-400 group-hover:text-slate-600 transition-all duration-300 p-1 rounded-lg hover:bg-slate-50 ${isExpanded ? 'rotate-0' : '-rotate-180'}`}>
+        <ChevronDown size={16} />
+      </span>
+    </div>
+  </div>
+);
 
 // ─── [D&D] 정렬 가능한 개별 아이템 래퍼 컴포넌트 ───
 const SortableField = ({ id, isEditing, className, children }) => {
@@ -35,12 +70,10 @@ const SortableField = ({ id, isEditing, className, children }) => {
 
 const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, onFormDirtyChange, onEditingStateChange, onForceUnlock, globalIpDictionary, selectedIp }, ref) => {
   const safeData = data || {};
-  // [수정] 모든 탭 초기 잠금 상태로 시작 (사용자 요청)
   const [isTabEditing, setIsTabEditing] = useState(false);
 
-  // [추가] 외부(App.jsx)에서 상태를 리셋할 수 있는 기능 노출
   useImperativeHandle(ref, () => ({
-    canNavigate: async () => true, // IpIndex는 현재 별도의 Dirty 가드가 필요 없음
+    canNavigate: async () => true,
     resetForm: () => {
       setIsTabEditing(false);
     }
@@ -51,13 +84,12 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
   
   const showConfirm = useConfirm();
   const [keySpecSchema, setKeySpecSchema] = useState([]); 
-  const [ipContentsSchema, setIpContentsSchema] = useState([]); // 🚀 컨텐츠 카드 스키마 상태 추가
+  const [ipContentsSchema, setIpContentsSchema] = useState([]);
 
   useEffect(() => {
     if (onEditingStateChange) onEditingStateChange(isTabEditing);
   }, [isTabEditing, onEditingStateChange]);
 
-  // ─── 지능형 Auto-Save ───
   const { showRecoveryModal, recoveredTime, handleRestore, handleDiscard } = useAutoSave({
     projectId,
     tabName: 'IP_Index',
@@ -70,7 +102,266 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
     setIsEditing: setIsTabEditing
   });
   const safeOverview = overviewData || { IP_Blocks: [], Project_Name: '', Foundry: '', Process: '' };
+
+  const [expandedItems, setExpandedItems] = useState({});
+  const [expandedSections, setExpandedSections] = useState({
+    newFindings: true,
+    revision: true,
+    debt: true,
+    resolved: false,
+    deferred: true
+  });
   
+  const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleExpand = (id) => setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const validIpsMap = React.useMemo(() => {
+    const map = {};
+    (safeOverview.IP_Blocks || []).forEach(ip => map[ip] = true);
+    return map;
+  }, [safeOverview.IP_Blocks]);
+
+  const { latestIssueStates } = useLogData(
+    revisionLogData || {},
+    selectedIpForIndex || 'All',
+    validIpsMap,
+    safeOverview.Project_Name || 'Unknown',
+    currentRevision
+  );
+
+  const getIssueTimeline = React.useCallback((issueId) => {
+    if (!issueId) return [];
+    const timeline = [];
+    const STAGES = ['EVT0', 'EVT1', 'EVT2', 'EVT3', 'EVT4', 'EVT5', 'DVT', 'PVT', 'MP'];
+    const hBlocks = revisionLogData?.historyBlocks || [];
+    const curIssues = revisionLogData?.issues || [];
+    const project = safeOverview.Project_Name || 'Unknown';
+    
+    hBlocks.forEach(block => {
+      const found = block.issues?.find(i => {
+        const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+        return id === issueId;
+      });
+      if (found) timeline.push({ stage: block.stageName, data: { ...found, stage: block.stageName } });
+    });
+    const foundCurrent = curIssues?.find(i => {
+      const id = i.entryMode === 'new' ? `${i.ipBlock}.${project}.${i.issueNum}` : i.targetIssue;
+      return id === issueId;
+    });
+    if (foundCurrent) timeline.push({ stage: currentRevision, data: { ...foundCurrent, stage: currentRevision } });
+    
+    timeline.sort((a, b) => STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage));
+    return timeline;
+  }, [revisionLogData, safeOverview.Project_Name, currentRevision]);
+
+  const { newFindings, resolvedIssues, revisionIssues, debtIssues, deferredIssues } = React.useMemo(() => {
+    const project = safeOverview.Project_Name || 'Unknown';
+    const newItems = [];
+    const resolvedItems = [];
+    const revisionItems = [];
+    const debtItems = [];
+    const deferredItems = [];
+
+    Object.values(latestIssueStates).forEach(item => {
+      if (!item) return;
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      const ip = isNewLike ? item.ipBlock : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+      if (selectedIpForIndex && ip !== selectedIpForIndex) return;
+
+      const isNewInCurrentStage = isNewLike && item.stage === currentRevision;
+      const st = getIssueStatus(item);
+
+      if (isNewInCurrentStage) {
+        newItems.push(item);
+      }
+      else if (st === 'CLOSED') {
+        resolvedItems.push(item);
+      }
+      else if (st === 'DEFERRED') {
+        deferredItems.push(item);
+      }
+      else if (item.disposition === 'Revision') {
+        revisionItems.push(item);
+      }
+      else {
+        debtItems.push(item);
+      }
+    });
+
+    const sortFn = (a, b) => {
+      const idA = (a.entryMode === 'new' || a.entryMode === 'fa') ? `${a.ipBlock}.${project}.${a.issueNum}` : a.targetIssue;
+      const idB = (b.entryMode === 'new' || b.entryMode === 'fa') ? `${b.ipBlock}.${project}.${b.issueNum}` : b.targetIssue;
+      return (idA || '').localeCompare(idB || '');
+    };
+
+    newItems.sort(sortFn);
+    resolvedItems.sort(sortFn);
+    revisionItems.sort(sortFn);
+    debtItems.sort(sortFn);
+    deferredItems.sort(sortFn);
+
+    return { newFindings: newItems, resolvedIssues: resolvedItems, revisionIssues: revisionItems, debtIssues: debtItems, deferredIssues: deferredItems };
+  }, [latestIssueStates, selectedIpForIndex, currentRevision, safeOverview.Project_Name]);
+
+  const ipStats = React.useMemo(() => {
+    if (!selectedIpForIndex) return [];
+
+    const project = safeOverview.Project_Name || 'Unknown';
+    const hBlocks = revisionLogData?.historyBlocks || [];
+    const stage = currentRevision;
+
+    const pastStats = hBlocks.map(block => {
+      const blockIssues = block.issues || [];
+      let total = 0;
+      let newCount = 0;
+      let closed = 0;
+      let debt = 0;
+      let carryover = 0;
+      let revision = 0;
+
+      const blockDebtDetails = {
+        Revision: 0,
+        Deferred: 0,
+        'SW Workaround': 0,
+        'Test Screening': 0,
+        'System Mitigation': 0,
+        'Other/TBD': 0
+      };
+
+      blockIssues.forEach(item => {
+        if (!item) return;
+        
+        const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+        const ip = isNewLike ? item.ipBlock : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+        if (ip !== selectedIpForIndex) return;
+
+        total++;
+        if (item.entryMode === 'new' || item.entryMode === 'fa' || (!item.entryMode && !item.carryoverStatus)) {
+          newCount++;
+        }
+        
+        if (item.disposition === 'Revision') {
+          revision++;
+        }
+
+        const status = getIssueStatus(item);
+        if (status === 'CLOSED') {
+          closed++;
+        } else if (status === 'DEFERRED') {
+          carryover++;
+        } else {
+          debt++;
+          const disp = item.disposition;
+          if (disp === 'Revision') {
+            blockDebtDetails['Revision']++;
+          } else if (disp === 'SW Workaround') {
+            blockDebtDetails['SW Workaround']++;
+          } else if (disp === 'Test Screening') {
+            blockDebtDetails['Test Screening']++;
+          } else if (disp === 'System Mitigation') {
+            blockDebtDetails['System Mitigation']++;
+          } else {
+            blockDebtDetails['Other/TBD']++;
+          }
+        }
+      });
+
+      const rate = total > 0 ? ((closed / total) * 100).toFixed(1) : '0.0';
+
+      return {
+        milestone: block.stageName,
+        total,
+        new: newCount,
+        closed,
+        debt,
+        revision,
+        carryover,
+        resolutionRate: `${rate}%`,
+        isCurrent: false,
+        debtDetails: blockDebtDetails
+      };
+    });
+
+    let currTotal = 0;
+    let currNew = 0;
+    let currClosed = 0;
+    let currDebt = 0;
+    let currCarryover = 0;
+    let currRevision = 0;
+
+    const currDebtDetails = {
+      Revision: 0,
+      Deferred: 0,
+      'SW Workaround': 0,
+      'Test Screening': 0,
+      'System Mitigation': 0,
+      'Other/TBD': 0
+    };
+
+    Object.values(latestIssueStates || {}).forEach(item => {
+      if (!item) return;
+
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      const ip = isNewLike ? item.ipBlock : (item.targetIssue ? item.targetIssue.split('.')[0] : '');
+      if (ip !== selectedIpForIndex) return;
+
+      currTotal++;
+      
+      const isNewInCurrentStage = isNewLike && item.stage === stage;
+      if (isNewInCurrentStage) {
+        currNew++;
+      }
+
+      if (item.stage === stage && item.disposition === 'Revision') {
+        currRevision++;
+      }
+
+      const status = getIssueStatus(item);
+      if (status === 'CLOSED') {
+        currClosed++;
+      } else if (status === 'DEFERRED') {
+        if (item.stage === stage) {
+          currCarryover++;
+        } else {
+          currDebt++;
+          currDebtDetails['Deferred']++;
+        }
+      } else {
+        currDebt++;
+        const disp = item.disposition;
+        if (disp === 'Revision') {
+          currDebtDetails['Revision']++;
+        } else if (disp === 'SW Workaround') {
+          currDebtDetails['SW Workaround']++;
+        } else if (disp === 'Test Screening') {
+          currDebtDetails['Test Screening']++;
+        } else if (disp === 'System Mitigation') {
+          currDebtDetails['System Mitigation']++;
+        } else {
+          currDebtDetails['Other/TBD']++;
+        }
+      }
+    });
+
+    const currRate = currTotal > 0 ? ((currClosed / currTotal) * 100).toFixed(1) : '0.0';
+    const cappedRate = parseFloat(currRate) > 100 ? '100.0' : currRate;
+
+    const currentStat = {
+      milestone: stage,
+      total: currTotal,
+      new: currNew,
+      closed: currClosed,
+      debt: currDebt,
+      revision: currRevision,
+      carryover: currCarryover,
+      resolutionRate: `${cappedRate}%`,
+      isCurrent: true,
+      debtDetails: currDebtDetails
+    };
+
+    return [...pastStats, currentStat];
+  }, [revisionLogData, currentRevision, latestIssueStates, selectedIpForIndex, safeOverview.Project_Name]);
+
   useEffect(() => {
     if (selectedIp && safeOverview.IP_Blocks.includes(selectedIp)) {
       setSelectedIpForIndex(selectedIp);
@@ -87,10 +378,8 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
     ? safeData[selectedIpForIndex] 
     : makeDefaultIpIndex(selectedIpForIndex, currentRevision);
 
-  // ─── 🚀 스키마 동기화 (IP 변경 시) ───
   useEffect(() => {
     if (selectedIpForIndex && currentIpData) {
-      // 1. Key Spec 동기화
       if (currentIpData.UI_Schemas?.Key_Spec) {
         setKeySpecSchema(currentIpData.UI_Schemas.Key_Spec);
       } else {
@@ -98,7 +387,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
         setKeySpecSchema(generated);
       }
 
-      // 2. 컨텐츠 카드 동기화
       if (currentIpData.UI_Schemas?.Contents) {
         setIpContentsSchema(currentIpData.UI_Schemas.Contents);
       } else {
@@ -112,7 +400,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  // ─── 🚀 Key Spec 핸들러 ───
   const handleKeySpecDragEnd = (event) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
@@ -162,7 +449,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
     updateCurrentIp({ UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Key_Spec: newSchema } });
   };
 
-  // ─── 🚀 컨텐츠 카드 (IP Architecture 등) 핸들러 ───
   const handleIpContentsDragEnd = (event) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
@@ -192,7 +478,7 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
       const newSchema = ipContentsSchema.filter(f => f.id !== id);
       setIpContentsSchema(newSchema);
       const newData = { ...currentIpData, UI_Schemas: { ...(currentIpData.UI_Schemas || {}), Contents: newSchema } };
-      delete newData[id]; // 좀비 데이터 삭제
+      delete newData[id];
       updateCurrentIp(newData);
     }
   };
@@ -261,14 +547,7 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
   const subLabelClass = "block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1";
   const subInputClass = "w-full border border-slate-100 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 bg-white focus:bg-white transition-colors disabled:opacity-50 disabled:bg-slate-50 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-50 placeholder:font-normal placeholder:text-slate-300 shadow-sm";
 
-  // --- [5] IP Index 데이터 파이프라인 (미결 이슈 현황 파생 데이터) ---
-  const pendingIssues = revisionLogData?.issues?.filter(i => {
-    if (i.ipBlock) return i.ipBlock === selectedIpForIndex && i.isPendingAction;
-    const id = i.targetIssue || '';
-    return id.startsWith(selectedIpForIndex + '.') && i.isPendingAction;
-  }) || [];
-  const futureFixes = pendingIssues.filter(i => i.disposition === 'Future Fix');
-  const carryOverCount = pendingIssues.filter(i => i.isCarryOver).length;
+
 
   return (
     <div className="max-w-full space-y-4 text-left h-full pb-10">
@@ -382,7 +661,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
                         </button>
                       )}
                       
-                      {/* Sub-Block Name: 콤팩트한 상단 헤더 */}
                       <div className="pr-8">
                         <label className={subLabelClass}>Sub-Block Name (Title)</label>
                         <input 
@@ -395,7 +673,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
                         />
                       </div>
 
-                      {/* Lineage Info: 상위 섹션과 동일하게 세로로 한 칸씩 배치 */}
                       <div className="space-y-3 pt-2 border-t border-slate-50">
                         <div>
                           <label className={subLabelClass}>Mother Project</label>
@@ -416,7 +693,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
                         </div>
                       </div>
 
-                      {/* Key Features / Specifications: 지식 자산화를 위한 핵심 필드 */}
                       <div className="pt-2">
                         <label className={subLabelClass}>Key Features / Specifications</label>
                         <textarea 
@@ -435,7 +711,6 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
             </div>
 
             <div className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
-
               {renderSectionHeader('문서 관리 정보')}
               <div className="grid grid-cols-2 gap-4">
                 <div><label className={labelClass}>Design Owner</label><input type="text" name="Design_Owner" value={currentIpData.Design_Owner || ''} onChange={handleIpIndexChange} className={inputClass} disabled={isOverviewDisabled} /></div>
@@ -443,41 +718,12 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
               </div>
             </div>
 
-            {/* 🚀 미결 이슈 현황 (파생 데이터) */}
-            <div className="bg-red-50 p-6 rounded-2xl shadow-sm border border-red-100 space-y-4">
-              <div className="flex justify-between items-center border-b border-red-200 pb-2">
-                <h2 className="text-sm font-extrabold text-red-800">미결 이슈 현황</h2>
-                <span className="text-[10px] font-bold bg-white text-red-500 px-2 py-1 rounded shadow-sm border border-red-100">Read Only</span>
-              </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-red-100">
-                  <span className="text-xs font-bold text-slate-600">총 미결 이슈 (Pending)</span>
-                  <span className="text-sm font-extrabold text-red-600">{pendingIssues.length} 건</span>
-                </div>
-                {carryOverCount > 0 && (
-                  <div className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-red-100">
-                    <span className="text-xs font-bold text-slate-600">이월된 항목 (Carry-Over)</span>
-                    <span className="text-sm font-extrabold text-indigo-600">{carryOverCount} 건</span>
-                  </div>
-                )}
-                {futureFixes.length > 0 && (
-                  <div className="flex justify-between items-center bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
-                    <span className="text-xs font-bold text-amber-700">Future Fix (주의)</span>
-                    <span className="text-sm font-extrabold text-amber-600">{futureFixes.length} 건</span>
-                  </div>
-                )}
-                {pendingIssues.length === 0 && (
-                  <div className="text-center py-2 text-xs font-bold text-red-400">
-                    현재 IP에 대한 미결 이슈가 없습니다.
-                  </div>
-                )}
-              </div>
-            </div>
+
           </div>
 
           <div className="xl:col-span-8 space-y-6">
             
-            {/* 🚀 Key Spec 영역 */}
+            {/* Key Spec 영역 */}
             <div className={`bg-white p-6 rounded-2xl shadow-sm border transition-colors space-y-5 ${!isOverviewDisabled ? "border-amber-300 ring-4 ring-amber-50" : "border-slate-200"}`}>
               {renderSectionHeader('Key Spec')}
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleKeySpecDragEnd}>
@@ -520,7 +766,7 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
               </DndContext>
             </div>
 
-            {/* 🚀 IP 컨텐츠 카드 영역 (D&D 및 자동 넘버링 적용) */}
+            {/* IP 컨텐츠 카드 영역 (D&D 및 자동 넘버링 적용) */}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleIpContentsDragEnd}>
               <SortableContext items={ipContentsSchema.map(f => f.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-6">
@@ -578,93 +824,230 @@ const IpIndexTab = forwardRef(({ data, overviewData, revisionLogData, currentRev
                 </SortableContext>
             </DndContext>
 
-            {/* 고정 영역: Revision History (자동 넘버링 동기화) */}
-            <div className="bg-gradient-to-br from-slate-100 to-indigo-50 p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4 mt-6">
-              <div className="flex items-center justify-between border-b border-indigo-200 pb-3">
-                <h2 className="text-lg font-extrabold text-indigo-900">{ipContentsSchema.length + 1}. Evaluation & Revision History</h2>
-                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-600 px-2 py-1 rounded border border-indigo-200">Revision_Log 연동</span>
+            {/* 고정 영역: Evaluation & Revision History (거대 박스 해체, 플로팅 카드 아키텍처 적용) */}
+            <div className="space-y-6 mt-8">
+              
+              {/* [Header Area] - 평탄화된 세련된 헤더 타이틀 영역 */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-4 mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <Activity className="text-indigo-600" size={22} />
+                    {ipContentsSchema.length + 1}. Evaluation & Revision History
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">데이터 분석 이력 및 마일스톤 품질 리포트</p>
+                </div>
+                <div className="mt-2 sm:mt-0">
+                  <span className="text-[11px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full border border-indigo-100">
+                    Revision_Log 연동
+                  </span>
+                </div>
               </div>
               
+              {/* 1. MilestoneMetricsTable (독립된 세련된 화이트 카드 컨테이너) */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 mb-6 select-none transition-[transform,shadow] duration-300 hover:shadow-md hover:-translate-y-0.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <Activity size={16} className="text-blue-500" />
+                    마일스톤 품질 리포트 요약 (Milestone Quality Metrics)
+                  </h3>
+                  <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100/50">동적 집계</span>
+                </div>
+                <MilestoneMetricsTable stats={ipStats} />
+              </div>
+
+              {/* 2. 5단계 폭포수 필터링 아코디언 리스트 (각각의 독립된 플로팅 카드화) */}
               {(() => {
                 const ip = selectedIpForIndex;
                 const proj = safeOverview.Project_Name || 'Unknown';
-                const rlIssues = revisionLogData?.issues || [];
-                const rlHistory = revisionLogData?.historyBlocks || [];
-                const isNewLike = (m) => m === 'new' || m === 'fa';
-                const getIssueId = (it) => isNewLike(it.entryMode) ? `${it.ipBlock}.${proj}.${it.issueNum}` : it.targetIssue;
-                const isRelated = (it) => {
-                  const id = getIssueId(it);
-                  if (isNewLike(it.entryMode)) {
-                    // ipBlock이 올바르게 저장된 경우 직접 비교
-                    if (it.ipBlock) return it.ipBlock === ip;
-                    // ipBlock 누락(구버전 데이터) → issueNum 기반 ID로 fallback 체크
-                    return id ? id.startsWith(ip + '.') : false;
-                  }
-                  return id ? id.startsWith(ip + '.') : false;
-                };
-                const allStages = [];
-                const curFiltered = rlIssues.filter(isRelated);
+                const hasAnyData = newFindings.length + revisionIssues.length + debtIssues.length + deferredIssues.length + resolvedIssues.length > 0;
 
-                // ── loadedIssues 중 현재 차수에서 아직 eval/carryover로 처리되지 않은 항목 추가 ──
-                const loadedIssueIds = revisionLogData?.loadedIssues || [];
-                const handledIds = new Set(
-                  rlIssues
-                    .filter(i => i.entryMode === 'eval' || i.entryMode === 'carryover')
-                    .map(i => i.targetIssue)
-                    .filter(Boolean)
-                );
-                const allHistoryIssues = [...rlHistory].flatMap(b => b.issues || []);
-                const pendingItems = [];
-                loadedIssueIds.forEach(lid => {
-                  if (handledIds.has(lid)) return; // 이미 처리됨
-                  // historyBlocks에서 해당 이슈의 최신 상태 조회 (역순 탐색)
-                  const latestEntry = [...allHistoryIssues].reverse().find(i => getIssueId(i) === lid);
-                  if (latestEntry && isRelated(latestEntry)) {
-                    pendingItems.push({ ...latestEntry, _isPendingEval: true });
-                  }
-                });
-
-                const combinedCurrent = [...curFiltered, ...pendingItems];
-                if (combinedCurrent.length > 0) allStages.push({ stageName: currentRevision, items: combinedCurrent, isCurrent: true });
-                const historyCopy = [...rlHistory].reverse();
-                historyCopy.forEach(b => {
-                  const filtered = (b.issues || []).filter(isRelated);
-                  if (filtered.length > 0) allStages.push({ stageName: b.stageName, items: filtered });
-                });
-                
-                if (allStages.length === 0) return (
-                  <div className="text-center py-8 text-indigo-300">
-                    <div className="text-3xl mb-2">📊</div>
-                    <p className="text-sm font-medium">{ip} IP에 대한 Revision_Log 데이터가 없습니다.</p>
-                  </div>
-                );
-                return allStages.map((stageBlock, si) => {
-                  const stageTotal = stageBlock.items.length;
-                  let stageOpen = 0, stageClosed = 0, stageDeferred = 0;
-                  stageBlock.items.forEach(it => {
-                    const s = getIssueStatus(it);
-                    if (s === 'OPEN') stageOpen++;
-                    else if (s === 'CLOSED') stageClosed++;
-                    else if (s === 'DEFERRED') stageDeferred++;
-                  });
+                if (!hasAnyData) {
                   return (
-                    <div key={si} className={`rounded-xl border border-slate-200 overflow-hidden ${stageBlock.isCurrent ? 'ring-2 ring-indigo-300' : ''}`}>
-                      <div className={`px-4 py-2.5 flex items-center gap-3 flex-wrap ${stageBlock.isCurrent ? 'bg-indigo-600' : 'bg-slate-700'}`}>
-                        <span className="text-white font-bold text-sm">{stageBlock.stageName}</span>
-                        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/10 text-white/80">TOTAL {stageTotal}</span>
-                          {stageOpen > 0 && <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-red-500/80 text-white">OPEN {stageOpen}</span>}
-                          {stageClosed > 0 && <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/10 text-white/70">CLOSED {stageClosed}</span>}
-                        </div>
-                      </div>
-                      <div className="bg-slate-50 p-3">
-                        {stageBlock.items.map((it, ii) => (
-                          <IssueSummaryCard key={it.id || ii} item={it} project={proj} isReadOnly={true} />
-                        ))}
-                      </div>
+                    <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-400 shadow-sm">
+                      <div className="text-3xl mb-2">📊</div>
+                      <p className="text-sm font-medium">{ip} IP에 대한 Revision_Log 데이터가 없습니다.</p>
                     </div>
                   );
-                });
+                }
+
+                return (
+                  <div className="space-y-6">
+                    {/* (1) 신규 등록 리스트 */}
+                    {newFindings.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-[transform,shadow] duration-300 p-5 group">
+                        <SectionHeader
+                          section="newFindings"
+                          title="신규 등록 리스트"
+                          icon={<Sparkles size={15} className="text-indigo-500" />}
+                          count={newFindings.length}
+                          accentColorClass="bg-indigo-500"
+                          badgeClass="text-indigo-700 bg-indigo-50 border border-indigo-100"
+                          isExpanded={expandedSections.newFindings}
+                          onToggle={toggleSection}
+                        />
+                        {expandedSections.newFindings && (
+                          <div id="accordion-content-newFindings" className="space-y-2 mt-3 p-4 bg-indigo-50/20 rounded-xl border border-indigo-100/30 group-hover:bg-indigo-50/40 transition-colors duration-300">
+                            {newFindings.map((item, ii) => {
+                              const id = item.entryMode === 'new' ? `${item.ipBlock}.${proj}.${item.issueNum}` : item.targetIssue;
+                              return (
+                                <IssueSummaryCard
+                                  key={item.id || ii}
+                                  item={item}
+                                  project={proj}
+                                  isReadOnly={true}
+                                  expandable={true}
+                                  expanded={!!expandedItems[item.id]}
+                                  onToggleExpand={() => toggleExpand(item.id)}
+                                  timeline={getIssueTimeline(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* (2) REVISION */}
+                    {revisionIssues.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-[transform,shadow] duration-300 p-5 group">
+                        <SectionHeader
+                          section="revision"
+                          title="REVISION"
+                          icon={<ArrowRightCircle size={15} className="text-amber-500" />}
+                          count={revisionIssues.length}
+                          accentColorClass="bg-amber-500"
+                          badgeClass="text-amber-700 bg-amber-50 border border-amber-100"
+                          isExpanded={expandedSections.revision}
+                          onToggle={toggleSection}
+                        />
+                        {expandedSections.revision && (
+                          <div id="accordion-content-revision" className="space-y-2 mt-3 p-4 bg-amber-50/20 rounded-xl border border-amber-100/30 group-hover:bg-amber-50/40 transition-colors duration-300">
+                            {revisionIssues.map((item, ii) => {
+                              const id = item.entryMode === 'new' ? `${item.ipBlock}.${proj}.${item.issueNum}` : item.targetIssue;
+                              return (
+                                <IssueSummaryCard
+                                  key={item.id || ii}
+                                  item={item}
+                                  project={proj}
+                                  isReadOnly={true}
+                                  expandable={true}
+                                  expanded={!!expandedItems[item.id]}
+                                  onToggleExpand={() => toggleExpand(item.id)}
+                                  timeline={getIssueTimeline(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* (3) 관리형 부채 */}
+                    {debtIssues.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-[transform,shadow] duration-300 p-5 group">
+                        <SectionHeader
+                          section="debt"
+                          title="관리형 부채"
+                          icon={<ShieldCheck size={15} className="text-slate-500" />}
+                          count={debtIssues.length}
+                          accentColorClass="bg-slate-500"
+                          badgeClass="text-slate-700 bg-slate-50 border border-slate-200"
+                          isExpanded={expandedSections.debt}
+                          onToggle={toggleSection}
+                        />
+                        {expandedSections.debt && (
+                          <div id="accordion-content-debt" className="space-y-2 mt-3 p-4 bg-slate-50/20 rounded-xl border border-slate-100/50 group-hover:bg-slate-50/40 transition-colors duration-300">
+                            {debtIssues.map((item, ii) => {
+                              const id = item.entryMode === 'new' ? `${item.ipBlock}.${proj}.${item.issueNum}` : item.targetIssue;
+                              return (
+                                <IssueSummaryCard
+                                  key={item.id || ii}
+                                  item={item}
+                                  project={proj}
+                                  isReadOnly={true}
+                                  expandable={true}
+                                  expanded={!!expandedItems[item.id]}
+                                  onToggleExpand={() => toggleExpand(item.id)}
+                                  timeline={getIssueTimeline(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* (4) 평가 유보 (Deferred) */}
+                    {deferredIssues.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-[transform,shadow] duration-300 p-5 group">
+                        <SectionHeader
+                          section="deferred"
+                          title="평가 유보 (Deferred)"
+                          icon={<Clock size={15} className="text-blue-500" />}
+                          count={deferredIssues.length}
+                          accentColorClass="bg-blue-500"
+                          badgeClass="text-blue-700 bg-blue-50 border border-blue-100"
+                          isExpanded={expandedSections.deferred}
+                          onToggle={toggleSection}
+                        />
+                        {expandedSections.deferred && (
+                          <div id="accordion-content-deferred" className="space-y-2 mt-3 p-4 bg-blue-50/20 rounded-xl border border-blue-100/30 group-hover:bg-blue-50/40 transition-colors duration-300">
+                            {deferredIssues.map((item, ii) => {
+                              const id = item.entryMode === 'new' ? `${item.ipBlock}.${proj}.${item.issueNum}` : item.targetIssue;
+                              return (
+                                <IssueSummaryCard
+                                  key={item.id || ii}
+                                  item={item}
+                                  project={proj}
+                                  isReadOnly={true}
+                                  expandable={true}
+                                  expanded={!!expandedItems[item.id]}
+                                  onToggleExpand={() => toggleExpand(item.id)}
+                                  timeline={getIssueTimeline(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* (5) 종결 */}
+                    {resolvedIssues.length > 0 && (
+                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-[transform,shadow] duration-300 p-5 group">
+                        <SectionHeader
+                          section="resolved"
+                          title="종결"
+                          icon={<CheckCircle size={15} className="text-emerald-500" />}
+                          count={resolvedIssues.length}
+                          accentColorClass="bg-emerald-500"
+                          badgeClass="text-emerald-700 bg-emerald-50 border border-emerald-100"
+                          isExpanded={expandedSections.resolved}
+                          onToggle={toggleSection}
+                        />
+                        {expandedSections.resolved && (
+                          <div id="accordion-content-resolved" className="space-y-2 mt-3 p-4 bg-emerald-50/20 rounded-xl border border-emerald-100/30 group-hover:bg-emerald-50/40 transition-colors duration-300">
+                            {resolvedIssues.map((item, ii) => {
+                              const id = item.entryMode === 'new' ? `${item.ipBlock}.${proj}.${item.issueNum}` : item.targetIssue;
+                              return (
+                                <IssueSummaryCard
+                                  key={item.id || ii}
+                                  item={item}
+                                  project={proj}
+                                  isReadOnly={true}
+                                  expandable={true}
+                                  expanded={!!expandedItems[item.id]}
+                                  onToggleExpand={() => toggleExpand(item.id)}
+                                  timeline={getIssueTimeline(id)}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
             </div>
 

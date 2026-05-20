@@ -15,6 +15,11 @@ import { useLogData } from '../../hooks/revisionLog/useLogData';
 import { useLogForm } from '../../hooks/revisionLog/useLogForm';
 import { useAsyncAction } from '../../hooks/revisionLog/useAsyncAction';
 
+// ── [보안/성능] Milestone Quality Table Imports ──
+import { resolveCanonicalState } from '../../utils/stateResolvers';
+import MilestoneMetricsTable from './MilestoneMetricsTable';
+import DebtDetailsPopover from './DebtDetailsPopover';
+
 const InitialEmptyDashboard = ({ stats, stage }) => {
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[500px] shadow-sm transition-all duration-300">
@@ -88,6 +93,159 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   const { 
     latestIssueStates, stats, sortedIssues, issues, historyBlocks 
   } = useLogData(safeData, ipDropdown, validIps, project, stage);
+
+  const allStats = useMemo(() => {
+    // 1. 과거 차수(historyBlocks)
+    const pastStats = (historyBlocks || []).map(block => {
+      const blockIssues = block.issues || [];
+      let total = 0;
+      let newCount = 0;
+      let closed = 0;
+      let debt = 0;
+      let carryover = 0;
+      let revision = 0;
+
+      const blockDebtDetails = {
+        Revision: 0,
+        Deferred: 0,
+        'SW Workaround': 0,
+        'Test Screening': 0,
+        'System Mitigation': 0,
+        'Other/TBD': 0
+      };
+
+      blockIssues.forEach(item => {
+        if (!item) return;
+        total++;
+        if (item.entryMode === 'new' || item.entryMode === 'fa' || (!item.entryMode && !item.carryoverStatus)) {
+          newCount++;
+        }
+        
+        // Revision 건수 집계
+        if (item.disposition === 'Revision') {
+          revision++;
+        }
+
+        // Closed/Debt/Carryover 상태 산정 (getIssueStatus 기준)
+        const status = getIssueStatus(item);
+        if (status === 'CLOSED') {
+          closed++;
+        } else if (status === 'DEFERRED') {
+          carryover++;
+        } else {
+          // OPEN인 상태는 관리형 부채(Debt)로 산정
+          debt++;
+          const disp = item.disposition;
+          if (disp === 'Revision') {
+            blockDebtDetails['Revision']++;
+          } else if (disp === 'SW Workaround') {
+            blockDebtDetails['SW Workaround']++;
+          } else if (disp === 'Test Screening') {
+            blockDebtDetails['Test Screening']++;
+          } else if (disp === 'System Mitigation') {
+            blockDebtDetails['System Mitigation']++;
+          } else {
+            blockDebtDetails['Other/TBD']++;
+          }
+        }
+      });
+
+      const rate = total > 0 ? ((closed / total) * 100).toFixed(1) : '0.0';
+
+      return {
+        milestone: block.stageName,
+        total,
+        new: newCount,
+        closed,
+        debt,
+        revision,
+        carryover,
+        resolutionRate: `${rate}%`,
+        isCurrent: false,
+        debtDetails: blockDebtDetails
+      };
+    });
+
+    // 2. 현재 차수(latestIssueStates)
+    let currTotal = 0;
+    let currNew = 0;
+    let currClosed = 0;
+    let currDebt = 0;
+    let currCarryover = 0;
+    let currRevision = 0;
+
+    const currDebtDetails = {
+      Revision: 0,
+      Deferred: 0,
+      'SW Workaround': 0,
+      'Test Screening': 0,
+      'System Mitigation': 0,
+      'Other/TBD': 0
+    };
+
+    Object.values(latestIssueStates || {}).forEach(item => {
+      if (!item) return;
+      currTotal++;
+      
+      const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+      // 이번 차수 신규 등록 건
+      if (isNewLike && item.stage === stage) {
+        currNew++;
+      }
+
+      // 이번 차수 결정된 Revision 판정 건
+      if (item.stage === stage && item.disposition === 'Revision') {
+        currRevision++;
+      }
+
+      // 상태 산정 (getIssueStatus 기준)
+      const status = getIssueStatus(item);
+      if (status === 'CLOSED') {
+        currClosed++;
+      } else if (status === 'DEFERRED') {
+        // 이번 차수에서 명시적으로 유보 결정된 경우
+        if (item.stage === stage) {
+          currCarryover++;
+        } else {
+          // 이전 차수 유보 상태로 아직 평가 대기 중인 경우 Open(Debt)로 산입
+          currDebt++;
+          currDebtDetails['Deferred']++;
+        }
+      } else {
+        currDebt++;
+        const disp = item.disposition;
+        if (disp === 'Revision') {
+          currDebtDetails['Revision']++;
+        } else if (disp === 'SW Workaround') {
+          currDebtDetails['SW Workaround']++;
+        } else if (disp === 'Test Screening') {
+          currDebtDetails['Test Screening']++;
+        } else if (disp === 'System Mitigation') {
+          currDebtDetails['System Mitigation']++;
+        } else {
+          currDebtDetails['Other/TBD']++;
+        }
+      }
+    });
+
+    const currRate = currTotal > 0 ? ((currClosed / currTotal) * 100).toFixed(1) : '0.0';
+    const cappedRate = parseFloat(currRate) > 100 ? '100.0' : currRate;
+
+    const currentStat = {
+      milestone: stage,
+      total: currTotal,
+      new: currNew,
+      closed: currClosed,
+      debt: currDebt,
+      revision: currRevision,
+      carryover: currCarryover,
+      resolutionRate: `${cappedRate}%`,
+      isCurrent: true,
+      debtDetails: currDebtDetails
+    };
+
+    return [...pastStats, currentStat];
+  }, [historyBlocks, stage, latestIssueStates]);
 
   const { 
     formData, editingId, isDirtyRef, formResetKey,
@@ -847,11 +1005,14 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                 }
               ].map((item) => {
                 const isSelected = statusFilter === item.key;
+                const isOpenDebtBadge = item.key === 'OPEN';
                 return (
                   <button
                     key={item.key}
                     onClick={() => setStatusFilter(item.key)}
                     className={`group h-8 inline-flex items-center px-3 py-1 rounded-lg border shadow-sm transition-all duration-150 text-xs shrink-0 select-none cursor-pointer ${
+                      isOpenDebtBadge ? 'relative cursor-help' : ''
+                    } ${
                       isSelected ? item.activeClass : item.inactiveClass
                     }`}
                   >
@@ -869,6 +1030,9 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
                     >
                       {item.value}
                     </span>
+                    {isOpenDebtBadge && (
+                      <DebtDetailsPopover details={stats.debtDetails} totalDebt={stats.open} />
+                    )}
                   </button>
                 );
               })}
@@ -909,91 +1073,8 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
               />
           </div>
 
-          {historyBlocks.length > 0 && (() => {
-            const uniqueHistoryIssues = new Set();
-            historyBlocks.forEach(block => {
-              (block.issues || []).forEach(i => {
-                if (!i) return;
-                const isNewLike = i.entryMode === 'new' || i.entryMode === 'fa';
-                const ip = isNewLike 
-                  ? i.ipBlock 
-                  : (i.targetIssue ? i.targetIssue.split('.')[0] : '');
-                
-                if (ipDropdown === 'All' || ip === ipDropdown) {
-                  const id = isNewLike 
-                    ? `${i.ipBlock}.${project}.${i.issueNum}` 
-                    : i.targetIssue;
-                  if (id) uniqueHistoryIssues.add(id);
-                }
-              });
-            });
-            const totalHistoryCount = uniqueHistoryIssues.size;
-
-            if (totalHistoryCount === 0) return null;
-
-            return (
-              <div className="mt-8">
-                <button
-                  type="button"
-                  onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
-                  className="w-full flex items-center justify-between border-b border-gray-200 pb-2 text-gray-700 hover:text-gray-900 transition-colors focus:outline-none"
-                  aria-expanded={isHistoryExpanded}
-                >
-                  <h3 className="text-sm font-bold flex items-center gap-2 m-0 select-none">
-                    <FolderOpen size={15} className="text-slate-500" />
-                    Previous Stages History
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold select-none">
-                      이슈 {totalHistoryCount}건
-                    </span>
-                    <span className={`transform transition-transform duration-300 text-slate-400 ${isHistoryExpanded ? 'rotate-180' : ''}`}>
-                      <ChevronDown size={16} />
-                    </span>
-                  </div>
-                </button>
-
-                <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isHistoryExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-                  <div className="overflow-hidden">
-                    <div className="pt-3 space-y-3">
-                      {historyBlocks.map((block, idx) => {
-                        const filteredHits = block.issues.filter(i => ipDropdown === 'All' ? true : (i.ipBlock || (i.targetIssue ? i.targetIssue.split('.')[0] : '')) === ipDropdown);
-                        if (filteredHits.length === 0) return null;
-                        return (
-                          <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 opacity-80 mt-3 first:mt-0">
-                            <h4 className="text-sm font-bold mb-3 flex items-center gap-2 border-b border-gray-100 pb-2 text-gray-600">
-                              <FolderOpen size={14} /> Stage: {block.stageName}
-                            </h4>
-                            <div className="space-y-2">
-                              {filteredHits.map(item => {
-                                const id = item.entryMode === 'new' ? `${item.ipBlock}.${project}.${item.issueNum}` : item.targetIssue;
-                                return (
-                                  <IssueSummaryCard
-                                    key={item.id}
-                                    item={item}
-                                    project={project}
-                                    isReadOnly={true}
-                                    expandable
-                                    onEdit={() => handleView({
-                                      ...item,
-                                      stage: item.stage || block.stageName
-                                    })}
-                                    historyStage={block.stageName}
-                                    needsEval={false}
-                                    timeline={getIssueTimeline(id)}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {/* 마일스톤 품질 리포트 요약 테이블 연동 */}
+          <MilestoneMetricsTable stats={allStats} />
           </div>
 
         </div>
