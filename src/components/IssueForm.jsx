@@ -3,8 +3,8 @@ import { Edit2, FolderOpen, Activity, Link, CheckCircle, Save, X, AlertCircle, L
 import { makeDefaultForm, calcNextNum, getHistory, getIssueStatus, DISPOSITION_OPTIONS, SEVERITY_OPTIONS, VERIFICATION_GAP_OPTIONS } from '../logic/revisionLogLogic';
 
 const lc = "block text-[13px] font-medium text-gray-600 mb-1.5";
-const ic = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed";
-const tc = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none break-words";
+const ic = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors disabled:bg-slate-50/90 disabled:text-slate-700 disabled:border-slate-200 disabled:cursor-not-allowed";
+const tc = "w-full min-w-0 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-700 resize-y focus:border-blue-500 focus:ring-1 outline-none transition-colors disabled:bg-slate-50/90 disabled:text-slate-700 disabled:border-slate-200 disabled:cursor-not-allowed disabled:resize-none break-words";
 
 const CustomerAlignmentFields = ({ formData, handleInput, disabled = false }) => (
   <div className="border border-indigo-100 rounded-xl p-4 bg-slate-50 space-y-3">
@@ -96,24 +96,22 @@ export default function IssueForm({
     return list;
   }, [currentIssueId, historyBlocks, issues, project, stage]);
 
-  // [버그 수정] carryover 또는 eval 모드와 같이 새 조치 등록/작성 프로세스에서는 시간 여행 제약이 기동되지 않아야 함
-  const isTimeTraveling = (mode !== 'carryover' && mode !== 'eval') && (activeStage !== stage);
+  // 사용자가 현재 차수(stage)가 아닌 과거 차수(activeStage !== stage)를 시간 여행하여 들여다보고 있을 때는
+  // 어떠한 모드에서도 과거 원본 스냅샷의 임의 훼손을 차단하기 위해 무조건 읽기 전용(Read-Only) 상태를 강제함.
+  const isTimeTraveling = activeStage !== stage;
   const displayIsReadOnly = isReadOnly || isTimeTraveling;
 
   const displayData = useMemo(() => {
-    if (editingId) {
-      return localFormData;
-    }
-    // [버그 수정] 사용자가 실제로 과거 이력을 조회(시간 여행) 중일 때만 timeline에서 데이터를 섀도잉해 줌.
-    // 현재 시점의 이슈를 등록하거나 이월 조치를 취할 때는 localFormData(실시간 입력 데이터)를 그대로 반환하여
-    // 라디오 버튼(controlled input)의 checked 상태 등이 지연 없이 정상 반영되도록 보정함.
+    // 사용자가 실제로 과거 이력을 조회(시간 여행) 중일 때만 timeline에서 데이터를 섀도잉해 줌.
+    // 현재 차수(activeStage === stage)를 조회/작성 중일 때는 입력 폼 데이터(localFormData)를 그대로 반환하여
+    // 입력 지연이나 라디오 버튼 체크 유실을 방지함.
     const isHistoricalView = activeStage !== stage;
     if (isHistoricalView) {
       const matched = timeline.find(t => t.stage === activeStage);
       if (matched) return matched.data;
     }
     return localFormData;
-  }, [editingId, activeStage, stage, timeline, localFormData]);
+  }, [activeStage, stage, timeline, localFormData]);
 
   // ── [치트키] 렌더링 시에는 displayData를 formData로 섀도잉하여 시간 여행 스왑 자동 반영 ──
   const formData = displayData;
@@ -287,11 +285,10 @@ export default function IssueForm({
 
         {/* 타이틀 및 차수 정보 */}
         <div className="mb-5 shrink-0">
-          <div className="text-[10px] text-indigo-500 font-extrabold mb-0.5 tracking-widest uppercase">{formData.ipBlock || 'SYSTEM'} BLOCK</div>
           <h2 className="text-xl font-black text-slate-800 tracking-tight flex flex-wrap items-center gap-2">
-            {mode === 'new' || mode === 'fa' 
-              ? `${formData.ipBlock}.${formData.issueNum || 'ISSUE'}`
-              : (formData.targetIssue || 'Selected Issue')
+            {formData.entryMode === 'new' || formData.entryMode === 'fa' 
+              ? `${formData.ipBlock}.${project}.${formData.issueNum || 'ISSUE'}`
+              : (formData.targetIssue || `${formData.ipBlock}.${project}.${formData.issueNum || 'ISSUE'}`)
             }
             {formData.subBlock && (
               <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
@@ -567,7 +564,7 @@ export default function IssueForm({
 
        {editingId && (
          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-           {isReadOnly ? (<><Edit2 size={14} className="text-slate-500" /><span className="text-sm font-bold text-slate-700">ReadOnly Mode</span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
+           {displayIsReadOnly ? (<><Lock size={14} className="text-slate-400" /><span className="text-sm font-bold text-slate-500">ReadOnly Mode</span></>) : (<><Edit2 size={14} className="text-blue-600" /><span className="text-sm font-bold text-blue-700">수정 모드</span></>)}
          </div>
        )}
        {stage === 'EVT0' && !isReadOnly && !editingId && (
@@ -592,7 +589,7 @@ export default function IssueForm({
          </button>
        )}
 
-      <fieldset disabled={displayIsReadOnly} className="border-none p-0 m-0 flex-1 min-w-0 overflow-hidden">
+      <fieldset disabled={displayIsReadOnly} className={`border-none p-0 m-0 flex-1 min-w-0 overflow-hidden transition-all duration-200 ${displayIsReadOnly ? 'opacity-[0.96] pointer-events-none' : ''}`}>
         {mode === 'reopen' ? (
           <div className="space-y-4">
             <div>
@@ -819,7 +816,7 @@ export default function IssueForm({
         ) : mode === 'carryover' ? (
           <div className="space-y-4">
             <div>
-              <label className={`${lc}`}>{editingId && <span className="text-blue-600 text-xs px-2 py-0.5 bg-blue-50 rounded-full font-bold ml-2">수정모드</span>}</label>
+              {null}
               <select name="targetIssue" value={formData.targetIssue || ''} onChange={(e) => {
                 const v = e.target.value;
                 const ex = issues.find(i => i.entryMode === 'carryover' && i.targetIssue === v);
@@ -891,7 +888,7 @@ export default function IssueForm({
         ) : mode === 'eval' ? (
           <div className="space-y-4">
             <div>
-              <label className={`${lc}`}>{editingId && <span className="text-blue-600 text-xs px-2 py-0.5 bg-blue-50 rounded-full font-bold ml-2">수정모드</span>}</label>
+              {null}
               <select name="targetIssue" value={formData.targetIssue || ''} onChange={(e) => {
                 const v = e.target.value;
                 const ex = issues.find(i => i.entryMode === 'eval' && i.targetIssue === v);

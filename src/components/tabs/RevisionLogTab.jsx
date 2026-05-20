@@ -15,6 +15,51 @@ import { useLogData } from '../../hooks/revisionLog/useLogData';
 import { useLogForm } from '../../hooks/revisionLog/useLogForm';
 import { useAsyncAction } from '../../hooks/revisionLog/useAsyncAction';
 
+const InitialEmptyDashboard = ({ stats, stage }) => {
+  return (
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[500px] shadow-sm transition-all duration-300">
+      {/* 상단 A: 미선택 가이드 */}
+      <div className="w-16 h-16 rounded-full bg-blue-50/70 border border-blue-100 flex items-center justify-center mb-5 shadow-inner">
+        <FolderOpen size={28} className="text-blue-500/90" />
+      </div>
+      <h3 className="text-base font-black text-slate-800 mb-2 tracking-tight">조회할 이슈를 선택해 주세요</h3>
+      <p className="text-xs text-slate-400 max-w-[340px] leading-relaxed mb-8">
+        상세 내역을 보시려면 왼쪽 목록에서 이슈 카드를 선택해 주세요.<br />
+        <span className="text-[10px] text-slate-400 font-semibold block mt-1.5 bg-slate-50 border border-slate-100/60 rounded px-2 py-0.5 inline-block">
+          🔒 새로운 이슈 등록이나 조치는 상단 '편집 시작' 클릭 필요
+        </span>
+      </p>
+
+      {/* 구분선 */}
+      <div className="w-full max-w-[380px] h-[1px] bg-slate-100 mb-8" />
+
+      {/* 하단 B: 현황 요약 통계 대시보드 */}
+      <div className="w-full max-w-[420px]">
+        <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">현재 차수 ({stage}) 이슈 요약</h4>
+        <div className="grid grid-cols-3 gap-3">
+          {/* 총 이슈 */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 flex flex-col justify-center shadow-sm">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Total</span>
+            <span className="text-xl font-black text-slate-700 mt-1">{stats?.total || 0}</span>
+          </div>
+
+          {/* Open */}
+          <div className="bg-orange-50/50 border border-orange-100/60 rounded-xl p-3.5 flex flex-col justify-center shadow-sm">
+            <span className="text-[9px] font-bold text-orange-500 uppercase">Open</span>
+            <span className="text-xl font-black text-orange-600 mt-1">{stats?.open || 0}</span>
+          </div>
+
+          {/* Closed */}
+          <div className="bg-green-50/40 border border-green-100/60 rounded-xl p-3.5 flex flex-col justify-center shadow-sm">
+            <span className="text-[9px] font-bold text-green-600 uppercase">Closed</span>
+            <span className="text-xl font-black text-green-700 mt-1">{stats?.closed || 0}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRevision, isArchived, lockReason, projectId, dbUpdatedAt, onSubmit, onImmediateUpdate, faReportData, onFaReportUpdate, onEditingStateChange, onFormDirtyChange, onForceUnlock, selectedIp }, ref) => {
   // 1. Logic & Utils
   const safeData = useMemo(() => data || { issues: [], historyBlocks: [], loadedIssues: [], initialMode: 'new' }, [data]);
@@ -75,6 +120,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
   }, []);
 
   const [isTabEditing, setIsTabEditing] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState(null);
   const isReadOnly = isArchived || !isTabEditing;
 
   // ── 탭 잠금 동기화 ──
@@ -384,8 +430,9 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
       if (!confirmed) return;
     }
     initialFormDataRef.current = null;
+    setSelectedIssueId(null);
     baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
-  }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm]);
+  }, [showConfirm, ipDropdown, latestIssueStates, baseResetForm, setSelectedIssueId]);
 
 
   const handleHistoryCardClick = useCallback((item) => {
@@ -404,6 +451,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     };
 
     setEditingId(null);
+    setSelectedIssueId(item.id || issueId);
     initialFormDataRef.current = null;
 
     if (isEvalTarget) {
@@ -428,39 +476,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
         entryMode: 'carryover',
       });
     }
-  }, [project, safeData.loadedIssues, ipDropdown, latestIssueStates, setEditingId, setMode, setFormData]);
-
-  const handleEdit = useCallback((item) => {
-    const isCurrentStage = !item.stage || item.stage === stage;
-    const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
-    const itemIssueId = isNewLike 
-      ? `${item.ipBlock}.${project}.${item.issueNum}` 
-      : item.targetIssue;
-
-    // [보안/감리]: 과거 차수의 원본 이슈 카드를 편집하려고 시도할 때의 리다이렉션 정합성 수립
-    if (!isCurrentStage) {
-      const isEvalTarget = (safeData.loadedIssues || []).includes(itemIssueId);
-      const isCarryoverTarget = !!(carryoverCandidateSet?.[itemIssueId]);
-      
-      if (isEvalTarget || isCarryoverTarget) {
-        handleHistoryCardClick(item);
-        return;
-      }
-    }
-
-    // [버그 수정/헌장 준수]: faId 매칭 조건은 오직 신규 등록군(new/fa)에만 제한 적용함.
-    // carryover, eval, reopen과 같은 전용 비즈니스 조치 카드는 faId 보유 여부와 무관하게 본래 탭 모드를 유지함.
-    const VALID_MODES = ['eval', 'carryover', 'new', 'fa', 'reopen'];
-    const rawMode = item.entryMode;
-    const hasValidFa = item.faId && (rawMode === 'new' || rawMode === 'fa');
-    const targetMode = (hasValidFa && isCurrentStage) ? 'fa' : rawMode;
-    const safeMode = VALID_MODES.includes(targetMode) ? targetMode : 'new';
-    
-    setMode(safeMode);
-    setEditingId(item.id);
-    initialFormDataRef.current = { ...item };
-    setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick]);
+  }, [project, safeData.loadedIssues, ipDropdown, latestIssueStates, setEditingId, setMode, setFormData, setSelectedIssueId]);
 
   const handleView = useCallback((item) => {
     const isCurrentStage = !item.stage || item.stage === stage;
@@ -490,9 +506,45 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
     setMode(safeMode);
     setEditingId(item.id);
+    setSelectedIssueId(item.id || itemIssueId);
     initialFormDataRef.current = { ...item };
     setFormData({ ...item });
-  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick]);
+  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick, setSelectedIssueId]);
+
+  const handleEdit = useCallback((item) => {
+    const isCurrentStage = !item.stage || item.stage === stage;
+    const isNewLike = item.entryMode === 'new' || item.entryMode === 'fa';
+    const itemIssueId = isNewLike 
+      ? `${item.ipBlock}.${project}.${item.issueNum}` 
+      : item.targetIssue;
+
+    // [보안/감리]: 과거 차수의 원본 이슈 카드를 편집하려고 시도할 때의 리다이렉션 정합성 수립
+    if (!isCurrentStage) {
+      const isEvalTarget = (safeData.loadedIssues || []).includes(itemIssueId);
+      const isCarryoverTarget = !!(carryoverCandidateSet?.[itemIssueId]);
+      
+      if (isEvalTarget || isCarryoverTarget) {
+        handleHistoryCardClick(item);
+      } else {
+        handleView(item);
+      }
+      return;
+    }
+
+    // [버그 수정/헌장 준수]: faId 매칭 조건은 오직 신규 등록군(new/fa)에만 제한 적용함.
+    // carryover, eval, reopen과 같은 전용 비즈니스 조치 카드는 faId 보유 여부와 무관하게 본래 탭 모드를 유지함.
+    const VALID_MODES = ['eval', 'carryover', 'new', 'fa', 'reopen'];
+    const rawMode = item.entryMode;
+    const hasValidFa = item.faId && (rawMode === 'new' || rawMode === 'fa');
+    const targetMode = (hasValidFa && isCurrentStage) ? 'fa' : rawMode;
+    const safeMode = VALID_MODES.includes(targetMode) ? targetMode : 'new';
+    
+    setMode(safeMode);
+    setEditingId(item.id);
+    setSelectedIssueId(item.id || itemIssueId);
+    initialFormDataRef.current = { ...item };
+    setFormData({ ...item });
+  }, [setMode, setEditingId, setFormData, stage, project, safeData.loadedIssues, carryoverCandidateSet, handleHistoryCardClick, handleView, setSelectedIssueId]);
 
 
 
@@ -511,15 +563,18 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     
     // 탭 전환 시 폼 상태 및 editingId를 완벽히 씻어내어 신규 등록 목록 Overwrite 버그를 근본적으로 차단
     baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
+    setSelectedIssueId(null);
     initialFormDataRef.current = null;
 
     setMode(newMode);
-  }, [mode, showConfirm, ipDropdown, latestIssueStates, baseResetForm, setMode]);
+  }, [mode, showConfirm, ipDropdown, latestIssueStates, baseResetForm, setMode, setSelectedIssueId]);
 
   const handleIpChange = useCallback(async (newIp) => {
     if (ipDropdown === newIp) return;
     setIpDropdown(newIp);
-  }, [ipDropdown, setIpDropdown]);
+    setSelectedIssueId(null);
+    baseResetForm(newIp, calcNextNum(newIp, latestIssueStates));
+  }, [ipDropdown, setIpDropdown, setSelectedIssueId, baseResetForm, latestIssueStates]);
 
   const handleDeleteRequest = useCallback(async (item) => {
     // [보안 가드] 삭제 작업도 executeSafe로 관리
@@ -595,6 +650,7 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
     if (onSubmit) onSubmit(safeData);
     clearAutoSave(projectId, 'Revision_Log');
     setIsTabEditing(false);
+    setSelectedIssueId(null);
     baseResetForm(ipDropdown, calcNextNum(ipDropdown, latestIssueStates));
   };
 
@@ -697,35 +753,53 @@ const RevisionLogTab = forwardRef(({ data, overviewData, ipIndexData, currentRev
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="min-w-0 overflow-hidden">
-          <IssueForm
-            key={mode + (editingId || 'new') + (formData.faId || '') + formResetKey}
-            initialData={formData}
-            mode={mode}
-            editingId={editingId}
-            isReadOnly={isReadOnly}
-            isArchived={isArchived}
-            stage={stage}
-            project={project}
-            currentSelectedIp={ipDropdown}
-            availableIps={availableIps}
-            latestIssueStates={latestIssueStates}
-            historyBlocks={historyBlocks}
-            issues={issues}
-            ipIndexData={ipIndexData}
-            curStageNums={curStageNums}
-            carryoverCandidateSet={carryoverCandidateSet}
-            sortedLoadedIssues={sortedLoadedIssues}
-            availOrigins={availOrigins}
-            sortedRevIds={sortedAllIds}
-            onSave={handleSave}
-            onCancel={cancelEdit}
-            onChange={handleFormChange}
-            onPullFaClick={() => setPullFaModalOpen(true)}
-            onUnlinkFa={handleUnlinkFa}
-            onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
-            onSetEditingId={setEditingId}
-            onReset={handleReset}
-          />
+          {(!selectedIssueId && !editingId && !isTabEditing) ? (
+            <InitialEmptyDashboard stats={stats} stage={stage} />
+          ) : (!selectedIssueId && !isTabEditing && (mode === 'eval' || mode === 'carryover' || mode === 'new' || mode === 'fa' || mode === 'reopen')) ? (
+            <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[400px] transition-all duration-300">
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-4">
+                <Lock size={20} className="text-blue-500 animate-pulse" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 mb-2">편집 모드 활성화 필요</h3>
+              <p className="text-sm text-slate-500 max-w-[320px] leading-relaxed mb-6">
+                선택하신 기능은 읽기 전용 상태입니다.<br />
+                신규 이슈 등록이나 조치/평가 내역을 작성하시려면 상단의 <strong>'편집 시작'</strong> 버튼을 클릭해 주세요.
+              </p>
+              <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-50/50 border border-blue-100 text-xs font-semibold text-blue-600">
+                <span>🔒 상단의 '편집 시작' 버튼을 먼저 클릭해 주세요</span>
+              </div>
+            </div>
+          ) : (
+            <IssueForm
+              key={mode + (editingId || 'new') + (formData.faId || '') + formResetKey}
+              initialData={formData}
+              mode={mode}
+              editingId={editingId}
+              isReadOnly={isReadOnly || (formData && formData.stage && formData.stage !== stage)}
+              isArchived={isArchived}
+              stage={stage}
+              project={project}
+              currentSelectedIp={ipDropdown}
+              availableIps={availableIps}
+              latestIssueStates={latestIssueStates}
+              historyBlocks={historyBlocks}
+              issues={issues}
+              ipIndexData={ipIndexData}
+              curStageNums={curStageNums}
+              carryoverCandidateSet={carryoverCandidateSet}
+              sortedLoadedIssues={sortedLoadedIssues}
+              availOrigins={availOrigins}
+              sortedRevIds={sortedAllIds}
+              onSave={handleSave}
+              onCancel={cancelEdit}
+              onChange={handleFormChange}
+              onPullFaClick={() => setPullFaModalOpen(true)}
+              onUnlinkFa={handleUnlinkFa}
+              onOpenAssigneeModal={() => setAssigneeModal({ open: true, newAssignee: formData.assignee || '' })}
+              onSetEditingId={setEditingId}
+              onReset={handleReset}
+            />
+          )}
         </div>
 
         <div className="bg-gray-50 rounded-xl border border-gray-200 flex flex-col h-[calc(100vh-12rem)] overflow-y-auto">
